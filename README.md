@@ -40,6 +40,10 @@ await moniker.claim("alice", { wallet });        // also sell, unlist, buy, give
 defineMonikerName(moniker);                      // <moniker-name address="bafyrei…" size="24"></moniker-name>
 ```
 
+Writes are free on the testnet trial: its nodes admit transactions with no
+fee, so a new account needs no coins to claim a handle or save a page. Pass
+`createMoniker({ fee })` for nodes that want one.
+
 `save` keeps card fields it does not know and retries when another app saved
 the card first. Store your app's own data in fields named `app.<your app>.*`.
 

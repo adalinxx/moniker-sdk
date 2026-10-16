@@ -20,7 +20,8 @@ export const DEFAULTS = {
   chain: ["Nexus", "testnet", "moniker-da6f57"],
   nodes: ["https://lattice-testnet-apps-iad.fly.dev", "https://lattice-testnet-apps-ams.fly.dev"],
   app: "https://adalinxx.github.io/moniker/app/",
-  fee: 1n,
+  // The trial chain's hosts admit 0-fee transactions: writes are free.
+  fee: 0n,
   // How long a read state is reused before asking for the tip again.
   freshFor: 10_000,
 };
