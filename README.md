@@ -56,9 +56,10 @@ is, `src/index.mjs`) and pass it: `createMoniker({ sdk })`.
 - `src/index.mjs`: `createMoniker` and the address and handle checks.
 - `src/browser.mjs`: the same, bound to the vendored Lattice SDK.
 - `src/element.mjs`: `<moniker-name>`.
-- `src/records/`: reading and writing Moniker's records. A copy of the Moniker
-  repo's `client/`; `MONIKER=<moniker checkout> npm run check-records` fails
-  when they differ.
+- `src/records/`: reading and writing Moniker's records: `profile.mjs` (cards,
+  fields, handles), `state.mjs` (reads state by descending the trie, checked
+  by CID), `wallet.mjs` (the request the Lattice Wallet signs). The one copy:
+  the Moniker app and its tests use these through a submodule.
 - `vendor/lattice-sdk.js`: the Lattice SDK, bundled for browsers.
 
 ## Test
@@ -67,6 +68,6 @@ is, `src/index.mjs`) and pass it: `createMoniker({ sdk })`.
 npm test
 ```
 
-The whole library runs against a real node in the Moniker repo's
-`e2e/moniker.mjs`, which imports this checkout (`MONIKER_SDK`, by default
-`../moniker-sdk` beside the Moniker checkout).
+The Moniker repo holds this one as the submodule `sdk/`: its policy tests check
+`src/records/` against the chain's policy, and its e2e runs the whole library
+against a real node. To try a change here there, check it out in `sdk/`.
