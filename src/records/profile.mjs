@@ -271,6 +271,27 @@ export const transfer = (entry, to) => hold(entry, to);
 /** The holder gives `entry` up; anyone may claim it next. */
 export const release = (entry) => write([{ key: handleKey(entry.handle), oldValue: entry.value }]);
 
+/**
+ * Stands for the buyer in a lattice://write request (wallet.mjs
+ * `writeRequestURI`): the wallet fills in the account the person chooses.
+ */
+export const ACCOUNT = "{account}";
+
+/**
+ * `handle` taken by whichever account signs, with no address needed: claimed
+ * when `entry` (as `resolve` returns it) is undefined, else bought at its
+ * price. The handle goes on that account's page too, if it has no page yet;
+ * a page it has is left as it is. For `writeRequestURI`, not `send`.
+ */
+export function acquire(handle, entry) {
+  if (!isHandle(handle)) throw new Error(`${handle}: a handle is lowercase letters, digits and _`);
+  if (entry && entry.price === undefined) throw new Error(`@${handle} is not for sale`);
+  const name = entry
+    ? write([{ key: handleKey(handle), oldValue: entry.value, newValue: ACCOUNT }], [{ to: entry.holder, amount: entry.price }])
+    : write([{ key: handleKey(handle), newValue: ACCOUNT }]);
+  return combine(name, write([{ key: cardKey(ACCOUNT), newValue: JSON.stringify({ handle }), ifAbsent: true }]));
+}
+
 /** `buyer` takes `entry` at its price. */
 export function buy(entry, buyer) {
   if (entry.price === undefined) throw new Error(`@${entry.handle} is not for sale`);

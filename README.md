@@ -40,6 +40,15 @@ await moniker.claim("alice", { wallet });        // also sell, unlist, buy, give
 defineMonikerName(moniker);                      // <moniker-name address="bafyrei…" size="24"></moniker-name>
 ```
 
+A handle can be bought with no address, by any wallet, as a `lattice://write`
+request: the wallet fills in the account the person chooses, and makes that
+account's page, showing the handle, if it has none.
+
+```js
+const uri = await moniker.buyRequest("rae");     // lattice://write?v=1&intent=…, valid 15 minutes
+await window.lattice.openRequest(uri);           // from a click; or show `uri` as a QR code or text
+```
+
 Writes are free on the testnet trial: its nodes admit transactions with no
 fee, so a new account needs no coins to claim a handle or save a page. Pass
 `createMoniker({ fee })` for nodes that want one.
