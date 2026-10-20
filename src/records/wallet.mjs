@@ -22,6 +22,22 @@ export function writeRequest(chainPath, { actions, payments = [] }, fee = 1n) {
   };
 }
 
+/**
+ * The write as a lattice://write request, for any wallet to sign as the
+ * account the person chooses there: `{account}` in a key or new value stands
+ * for it, and an action with `ifAbsent` is written only if its key holds
+ * nothing. `fee` is proposed, as for `send`; without one the wallet uses its
+ * own. The wallet picks the nonce. Hand it to the wallet in this
+ * browser with `lattice.openRequest(uri)`, or show it as text or a QR code.
+ */
+export function writeRequestURI(chainPath, write, { fee, label, expiresAt = new Date(Date.now() + 15 * 60_000) } = {}) {
+  const { fee: _, ...request } = writeRequest(chainPath, write);
+  const intent = { version: 1, ...request, ...(fee !== undefined && { fee: String(fee) }), expiresAt: expiresAt.toISOString(), ...(label && { label }) };
+  const bytes = new TextEncoder().encode(JSON.stringify(intent));
+  const base64 = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+  return `lattice://write?v=1&intent=${base64.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`;
+}
+
 /** Asks the wallet to approve, sign and send the write. Resolves to `{ transactionCID }`. */
 export const send = (lattice, chainPath, write, fee) => lattice.writeRecords(writeRequest(chainPath, write, fee));
 
