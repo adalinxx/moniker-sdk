@@ -145,7 +145,9 @@ export function createMoniker(options) {
     buyRequest: async (handle) => {
       const name = String(handle).replace(/^@/, "");
       const entry = await profileRecords.resolve(await state({ fresh: true }), name);
-      return writeRequestURI(chain, profileRecords.acquire(name, entry), { fee, label: `Buy @${name}` });
+      // Wallets show at most 64 characters of a label: a longer one goes unlabeled.
+      const label = `Buy @${name}`.length <= 64 ? `Buy @${name}` : undefined;
+      return writeRequestURI(chain, profileRecords.acquire(name, entry), { fee, label });
     },
     /** Buys a handle at the price the chain holds now; the holder is paid in the same transaction. */
     buy: async (handle, { wallet }) => send(wallet)(profileRecords.buy(await entry(handle), await me(wallet))),
