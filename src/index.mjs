@@ -13,7 +13,7 @@
 // shows them to the person and signs; this library never holds a key.
 import * as profileRecords from "./records/profile.mjs";
 import { anyHost, tip, view, volumeLoader } from "./records/state.mjs";
-import { writeRequest } from "./records/wallet.mjs";
+import { writeRequest, writeRequestURI } from "./records/wallet.mjs";
 
 /** Where Moniker lives now: the testnet trial chain and its shared hosts. */
 export const DEFAULTS = {
@@ -135,6 +135,18 @@ export function createMoniker(options) {
     sell: async (handle, price, { wallet }) => send(wallet)(profileRecords.list(await entry(handle), BigInt(price))),
     /** Takes a handle off sale. */
     unlist: async (handle, { wallet }) => send(wallet)(profileRecords.unlist(await entry(handle))),
+    /**
+     * A lattice://write request that claims `handle`, or buys it at the price
+     * the chain holds now, for whichever account signs it: no wallet or
+     * address needed here. Hand it to `window.lattice.openRequest` from a
+     * click, or show it as a QR code or text. The account's page shows the
+     * handle too, if it had none.
+     */
+    buyRequest: async (handle) => {
+      const name = String(handle).replace(/^@/, "");
+      const entry = await profileRecords.resolve(await state({ fresh: true }), name);
+      return writeRequestURI(chain, profileRecords.acquire(name, entry), { fee, label: `Buy @${name}` });
+    },
     /** Buys a handle at the price the chain holds now; the holder is paid in the same transaction. */
     buy: async (handle, { wallet }) => send(wallet)(profileRecords.buy(await entry(handle), await me(wallet))),
     /** Gives a handle to `address`. */
