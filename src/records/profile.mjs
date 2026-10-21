@@ -1,25 +1,30 @@
-// Profiles and handles on Moniker, the profile chain, read from a state view
-// `{ get(key), list(prefix) }` (see state.mjs) and written as
+// Accounts, profiles and names on Moniker, the profile chain, read from a
+// state view `{ get(key), list(prefix) }` (see state.mjs) and written as
 // `{ actions, payments? }` for the wallet (see wallet.mjs).
 //
-// A handle is what people see: it has the card. An account is a key that
-// holds handles, and goes by one of them.
+// An account is a key. It owns profiles: the public identity apps show, with
+// a card, and the thing a record says it is from. A profile holds names
+// (@handles), and shows one of them.
 //
 // Keys:
-//   name/<handle>         <holder> or <holder>@<price>
-//   holds/<a>/<handle>    1 while <a> holds <handle>, moved with it (the policy sees to it)
-//   user/<a>/card/<handle> <handle>'s card while <a> holds it: JSON { name, description, avatar, header, url, links }
-//   user/<a>/name         the handle <a> goes by where only the account is known
-//   user/<a>/<field>      anything else: key.x25519, app.<name>.<field>
+//   profile/<p>            <owner>, <owner>@<price> or <owner>><account> (offered to it)
+//   about/<p>/card         JSON { name, description, avatar, header, url, links }
+//   about/<p>/name         the handle the profile shows, one it holds
+//   about/<p>/admin/<a>    1 while account <a> may act as the profile elsewhere
+//   name/<handle>          <p>, <p>@<price> or <p>><profile> (offered to it)
+//   owns/<a>/<p>           1 while <a> owns <p>
+//   holds/<p>/<handle>     1 while <p> holds <handle>
+//   user/<a>/<field>       the account's own: key.x25519, app.<name>.<field>
 //
-// A card is kept under its holder, so a handle that changes hands starts with
-// an empty card, and its old holder's card for it is no longer shown.
-//
-// Records are written by anyone the policy lets through, so every value is
-// parsed as untrusted: what does not parse is left out, never fatal.
+// The policy sees only a transaction, so a write acting for profile <p>
+// rewrites profile/<p> to the value it has: consensus checks that value, and
+// the policy reads the owner from it. A profile's records sit apart, under
+// about/<p>/, so no write updates a key and adds a key under it. Records are written by anyone the policy
+// lets through, so every value is parsed as untrusted: what does not parse is
+// left out, never fatal.
 
 /** The CID of the profile policy module built from `policy/`. */
-export const MONIKER_POLICY = "bafyreidbabni55wvwzcq27sx6jjiirtlxrqqlzvxz4ujebjidd5tztp2li";
+export const MONIKER_POLICY = "bafyreia2jf6qqz5mrxkuznwxdlzm5f6yfg246zq76sfqb4q5sahcgppooe";
 
 /** Where Moniker lives. */
 export const MONIKER_CHAIN = ["Nexus", "moniker"];
@@ -61,21 +66,34 @@ export const runsMoniker = (spec) =>
       policy.entrypoint === "lattice_validate_transaction",
   );
 
-export const cardKey = (address, handle) => `user/${address}/card/${handle}`;
-export const defaultKey = (address) => `user/${address}/name`;
-export const fieldKey = (address, field) => `user/${address}/${field}`;
-export const handleKey = (handle) => `name/${handle}`;
-export const holdsKey = (address, handle) => `holds/${address}/${handle}`;
+export const profileKey = (p) => `profile/${p}`;
+export const cardKey = (p) => `about/${p}/card`;
+export const shownKey = (p) => `about/${p}/name`;
+export const adminKey = (p, account) => `about/${p}/admin/${account}`;
+export const nameKey = (handle) => `name/${handle}`;
+export const ownsKey = (account, p) => `owns/${account}/${p}`;
+export const holdsKey = (p, handle) => `holds/${p}/${handle}`;
+export const fieldKey = (account, field) => `user/${account}/${field}`;
+
+const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
 /** Whether `handle` is one the policy accepts: lowercase letters, digits and `_`. */
 export const isHandle = (handle) => typeof handle === "string" && /^[a-z0-9_]+$/.test(handle);
 
+/** Whether `text` is a profile id: 16 characters of `a`–`z` and `2`–`7`. */
+export const isProfileId = (text) => typeof text === "string" && /^[a-z2-7]{16}$/.test(text);
+
+/** A new random profile id; a taken one is refused by consensus, and the client picks again. */
+export function newProfileId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return [...bytes].map((byte) => BASE32[byte % 32]).join("");
+}
+
 /**
  * Whether `text` is an account address in its one canonical spelling, as the
- * policy checks a handle's holder.
+ * policy checks a profile's owner.
  */
 export function isAddress(text) {
-  const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
   return (
     typeof text === "string" &&
     text.length === 59 &&
@@ -95,115 +113,140 @@ const parseObject = (value) => {
   }
 };
 
-/** The holder and price in a handle value, as the policy reads them. */
-export function holding(value) {
+/**
+ * A token value as the policy reads it: `{ holder, price?, offer? }`, with
+ * `holder` and any `offer` passing `valid`; undefined when it does not parse.
+ */
+export function readToken(value, valid) {
   if (typeof value !== "string") return undefined;
-  const at = value.indexOf("@");
-  const holder = at < 0 ? value : value.slice(0, at);
-  if (!isAddress(holder)) return undefined;
-  if (at < 0) return { holder };
-  const digits = value.slice(at + 1);
-  if (!/^(0|[1-9][0-9]*)$/.test(digits) || BigInt(digits) >= 2n ** 64n) return undefined;
-  return { holder, price: BigInt(digits) };
+  const at = value.search(/[@>]/);
+  if (at < 0) return valid(value) ? { holder: value } : undefined;
+  const holder = value.slice(0, at);
+  const rest = value.slice(at + 1);
+  if (!valid(holder)) return undefined;
+  if (value[at] === ">") return valid(rest) && rest !== holder ? { holder, offer: rest } : undefined;
+  if (!/^(0|[1-9][0-9]*)$/.test(rest) || BigInt(rest) >= 2n ** 64n) return undefined;
+  return { holder, price: BigInt(rest) };
 }
 
-/** A handle value: its holder, and its price when it is for sale. */
-export function holdingValue(holder, price) {
-  if (!isAddress(holder)) throw new Error(`not an address: ${holder}`);
-  if (price === undefined) return holder;
-  if (typeof price !== "bigint" || price < 0n || price >= 2n ** 64n) throw new Error(`bad price: ${price}`);
-  return `${holder}@${price}`;
+/** A token value: its holder, with a price for anyone or an offer to one taker, or neither. */
+export function tokenValue(holder, { price, offer } = {}) {
+  if (price !== undefined) {
+    if (typeof price !== "bigint" || price < 0n || price >= 2n ** 64n) throw new Error(`bad price: ${price}`);
+    return `${holder}@${price}`;
+  }
+  return offer === undefined ? holder : `${holder}>${offer}`;
 }
 
 // Reading.
 
+/** Profile `p` as held: `{ id, value, owner, price?, offer? }`, or undefined when there is none. */
+export async function profileToken(state, p) {
+  if (!isProfileId(p)) return undefined;
+  const value = await state.get(profileKey(p));
+  const token = readToken(value, isAddress);
+  return token && { id: p, value, owner: token.holder, ...(token.price !== undefined && { price: token.price }), ...(token.offer && { offer: token.offer }) };
+}
+
 /**
- * `handle`'s card while it is held: `{ address, handle, name?, description?,
- * avatar?, header?, url?, links? }`, where `address` is its holder; undefined
- * when no one holds it. What does not parse is left out.
+ * Profile `p`: `{ id, owner, price?, offer?, handle?, name?, description?,
+ * avatar?, header?, url?, links? }`, where `handle` is the name it shows,
+ * kept only while it holds it; undefined when there is no profile `p`.
  */
-export async function getCard(state, handle) {
-  const entry = await resolve(state, handle);
-  if (!entry) return undefined;
-  const card = parseObject(await state.get(cardKey(entry.holder, handle))) ?? {};
-  const shown = { address: entry.holder, handle };
-  for (const field of CARD_FIELDS) if (typeof card[field] === "string" && card[field] !== "") shown[field] = card[field];
-  if (shown.url !== undefined && !isWebURL(shown.url)) delete shown.url;
+export async function getProfile(state, p) {
+  const token = await profileToken(state, p);
+  if (!token) return undefined;
+  const { value, ...profile } = token;
+  const card = parseObject(await state.get(cardKey(p))) ?? {};
+  for (const field of CARD_FIELDS) if (typeof card[field] === "string" && card[field] !== "") profile[field] = card[field];
+  if (profile.url !== undefined && !isWebURL(profile.url)) delete profile.url;
   const links = readLinks(card.links);
-  if (links.length > 0) shown.links = links;
-  return shown;
+  if (links.length > 0) profile.links = links;
+  const shown = await state.get(shownKey(p));
+  if ((await resolve(state, shown))?.profile === p) profile.handle = shown;
+  return profile;
 }
 
-/**
- * The handle `address` goes by: its default while it still holds it, else
- * its only handle; undefined when it holds none, or several and no default.
- */
-export async function goesBy(state, address) {
-  const chosen = await state.get(defaultKey(address));
-  if (isHandle(chosen) && (await resolve(state, chosen))?.holder === address) return chosen;
-  const held = await heldBy(state, address);
-  return held.length === 1 ? held[0].handle : undefined;
-}
+/** Profiles for many ids at once, in order, for a feed; an unknown id gives `{ id }`. */
+export const getProfiles = (state, ids) => Promise.all(ids.map(async (p) => (await getProfile(state, p)) ?? { id: p }));
 
-/**
- * What to show for an account: the card of the handle it goes by, or just
- * `{ address }`. Apps that know only who signed something show this.
- */
-export async function getProfile(state, address) {
-  const handle = await goesBy(state, address);
-  const card = handle && (await getCard(state, handle));
-  return card?.address === address ? card : { address };
-}
-
-/** Profiles for many addresses at once, in order, for a feed. */
-export const getProfiles = (state, addresses) => Promise.all(addresses.map((address) => getProfile(state, address)));
-
-/** `address`'s fields outside its cards and default, as `{ field: value }`. */
-export async function getFields(state, address) {
-  const prefix = `user/${address}/`;
-  const fields = {};
-  for await (const [key, value] of state.list(prefix)) {
-    const field = key.slice(prefix.length);
-    if (field !== "name" && !field.startsWith("card/")) fields[field] = value;
-  }
-  return fields;
-}
-
-export const getField = (state, address, field) => state.get(fieldKey(address, field));
-
-/** The handle as held: `{ handle, value, holder, price? }`, or undefined when free. */
+/** The name as held: `{ handle, value, profile, price?, offer? }`, or undefined when free. */
 export async function resolve(state, handle) {
   if (!isHandle(handle)) return undefined;
-  const value = await state.get(handleKey(handle));
-  const held = holding(value);
-  return held && { handle, value, ...held };
+  const value = await state.get(nameKey(handle));
+  const token = readToken(value, isProfileId);
+  return token && { handle, value, profile: token.holder, ...(token.price !== undefined && { price: token.price }), ...(token.offer && { offer: token.offer }) };
 }
 
-/** Every handle, as `resolve` returns it, in handle order. Reads all of `name/`. */
+/** The profile holding `handle`, as `getProfile` returns it, or undefined when the name is free. */
+export async function profileOf(state, handle) {
+  const entry = await resolve(state, handle);
+  return entry && getProfile(state, entry.profile);
+}
+
+/** The profiles `account` owns: one prefix read of `owns/`. */
+export async function profilesOf(state, account) {
+  const prefix = `owns/${account}/`;
+  const found = [];
+  for await (const [key] of state.list(prefix)) {
+    const profile = await getProfile(state, key.slice(prefix.length));
+    if (profile?.owner === account) found.push(profile);
+  }
+  return found;
+}
+
+/** The names profile `p` holds, as `resolve` returns them, in handle order: one prefix read of `holds/`. */
+export async function namesOf(state, p) {
+  const prefix = `holds/${p}/`;
+  const found = [];
+  for await (const [key] of state.list(prefix)) {
+    const entry = await resolve(state, key.slice(prefix.length));
+    if (entry?.profile === p) found.push(entry);
+  }
+  return found;
+}
+
+/** The accounts profile `p` names as its admins. */
+export async function adminsOf(state, p) {
+  const prefix = `about/${p}/admin/`;
+  const found = [];
+  for await (const [key, value] of state.list(prefix)) {
+    const account = key.slice(prefix.length);
+    if (value === "1" && isAddress(account)) found.push(account);
+  }
+  return found;
+}
+
+/** Whether `account` may act as profile `p` now: its owner or one of its admins. */
+export async function actsFor(state, account, p) {
+  const token = await profileToken(state, p);
+  return token !== undefined && (token.owner === account || (await state.get(adminKey(p, account))) === "1");
+}
+
+/** Every name, as `resolve` returns it, in handle order. Reads all of `name/`. */
 export async function* handles(state) {
-  for await (const [key, value] of state.list("name/")) {
-    const held = holding(value);
-    if (held) yield { handle: key.slice("name/".length), value, ...held };
+  for await (const [key] of state.list("name/")) {
+    const entry = await resolve(state, key.slice("name/".length));
+    if (entry) yield entry;
   }
 }
 
-/** The handles for sale, cheapest first. */
+/** The names for sale, cheapest first. */
 export async function forSale(state) {
   const found = [];
   for await (const entry of handles(state)) if (entry.price !== undefined) found.push(entry);
   return found.sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : a.handle < b.handle ? -1 : 1));
 }
 
-/** The handles `address` holds, as `resolve` returns them, in handle order: one prefix read of `holds/`. */
-export async function heldBy(state, address) {
-  const prefix = `holds/${address}/`;
-  const found = [];
-  for await (const [key] of state.list(prefix)) {
-    const entry = await resolve(state, key.slice(prefix.length));
-    if (entry?.holder === address) found.push(entry);
-  }
-  return found;
+/** `account`'s fields outside its profiles, as `{ field: value }`. */
+export async function getFields(state, account) {
+  const prefix = `user/${account}/`;
+  const fields = {};
+  for await (const [key, value] of state.list(prefix)) fields[key.slice(prefix.length)] = value;
+  return fields;
 }
+
+export const getField = (state, account, field) => state.get(fieldKey(account, field));
 
 // Writing. Each change names the value the writer read as the old one, so if
 // the key changed since, consensus refuses it: nothing is overwritten unseen,
@@ -211,43 +254,75 @@ export async function heldBy(state, address) {
 
 const write = (actions, payments = []) => ({ actions, payments });
 
-/** One write of several, as one transaction. */
-export const combine = (...writes) =>
-  write(
-    writes.flatMap((w) => w.actions),
-    writes.flatMap((w) => w.payments ?? []),
-  );
+/** One key's change from what was read to `newValue` (undefined deletes it). */
+const change = (key, oldValue, newValue) => ({ key, ...(oldValue !== undefined && { oldValue }), ...(newValue !== undefined && { newValue }) });
+
+/** A key rewritten to the value it has: shows the policy who holds it. */
+const unchanged = (key, value) => ({ key, oldValue: value, newValue: value });
 
 /**
- * A change to `handle`'s card, by `address`, its holder: each of `changes`
- * sets a field, or removes it when undefined, null, "" or an empty `links`.
- * Text fields are strings; `links` is `[{ label, url }]` with web addresses.
- * Fields the client does not know are kept. An empty card is deleted.
- * Nothing to write when nothing changes.
+ * One write of several, as one transaction. A key rewritten unchanged, to
+ * show its value, gives way to a real change of the same key.
  */
-export async function editCard(state, address, handle, changes) {
-  if ((await resolve(state, handle))?.holder !== address) throw new Error(`@${handle} is not yours`);
-  const key = cardKey(address, handle);
-  const oldValue = await state.get(key);
-  const card = { ...(parseObject(oldValue) ?? {}) };
+export function combine(...writes) {
+  const actions = writes.flatMap((w) => w.actions);
+  const real = new Set(actions.filter((a) => a.oldValue !== a.newValue).map((a) => a.key));
+  const kept = [];
+  const seen = new Set();
+  for (const action of actions) {
+    const shows = action.oldValue !== undefined && action.oldValue === action.newValue;
+    if (shows && (real.has(action.key) || seen.has(action.key))) continue;
+    seen.add(action.key);
+    kept.push(action);
+  }
+  return write(kept, writes.flatMap((w) => w.payments ?? []));
+}
+
+/** Profile `p`, which `account` must own. */
+async function owned(state, account, p) {
+  const token = await profileToken(state, p);
+  if (token?.owner !== account) throw new Error("That profile isn't yours");
+  return token;
+}
+
+/**
+ * A new profile owned by `account`, with `card` and the free name `handle`
+ * if given: `{ id, write }`. The id is random; if it was taken meanwhile,
+ * consensus refuses the write and the client asks again.
+ */
+export async function createProfile(state, account, { card, handle } = {}) {
+  let id = newProfileId();
+  while (await state.get(profileKey(id))) id = newProfileId();
+  const parts = [write([change(profileKey(id), undefined, account), change(ownsKey(account, id), undefined, "1")])];
+  if (card) parts.push(write([change(cardKey(id), undefined, JSON.stringify(checkedCard({}, card)))]));
+  if (handle !== undefined) parts.push(await claimFor(state, id, handle, undefined, true));
+  return { id, write: combine(...parts) };
+}
+
+function checkedCard(card, changes) {
   for (const [field, value] of Object.entries(changes)) {
     if (value === undefined || value === null || value === "" || (field === "links" && value.length === 0)) delete card[field];
     else if (field === "links") card.links = checkedLinks(value);
     else if (typeof value === "string") card[field] = value;
     else throw new Error(`${field}: card fields are strings`);
   }
-  const newValue = Object.keys(card).length > 0 ? JSON.stringify(card) : undefined;
-  return set(key, oldValue, newValue);
+  return card;
 }
 
-/** One key's change from what was read to `newValue` (undefined deletes it); nothing when equal. */
-const set = (key, oldValue, newValue) =>
-  write(newValue === oldValue ? [] : [{ key, ...(oldValue !== undefined && { oldValue }), ...(newValue !== undefined && { newValue }) }]);
-
-/** `address` goes by `handle`, one it holds, where only the account is known. */
-export async function setDefault(state, address, handle) {
-  if ((await resolve(state, handle))?.holder !== address) throw new Error(`@${handle} is not yours`);
-  return set(defaultKey(address), await state.get(defaultKey(address)), handle);
+/**
+ * A change to profile `p`'s card by `account`, its owner: each of `changes`
+ * sets a field, or removes it when undefined, null, "" or an empty `links`.
+ * Text fields are strings; `links` is `[{ label, url }]` with web addresses.
+ * Fields the client does not know are kept. An empty card is deleted.
+ * Nothing to write when nothing changes.
+ */
+export async function editCard(state, account, p, changes) {
+  const token = await owned(state, account, p);
+  const oldValue = await state.get(cardKey(p));
+  const card = checkedCard({ ...(parseObject(oldValue) ?? {}) }, changes);
+  const newValue = Object.keys(card).length > 0 ? JSON.stringify(card) : undefined;
+  if (newValue === oldValue) return write([]);
+  return write([unchanged(profileKey(p), token.value), change(cardKey(p), oldValue, newValue)]);
 }
 
 function checkedLinks(links) {
@@ -259,116 +334,163 @@ function checkedLinks(links) {
   });
 }
 
-/** Sets `address`'s field outside the card, or removes it when undefined. */
-export async function setField(state, address, field, value) {
-  if (field === "" || field === "name" || field === "card" || field.startsWith("card/")) throw new Error(`${field || "(empty)"}: not a field name`);
-  const key = fieldKey(address, field);
-  return set(key, await state.get(key), value);
-}
-
 /**
  * Edits the card and sends it with `send(write)`. If the send fails because
  * the card changed meanwhile (another app saved first), reads again and
  * retries; any other failure is thrown.
  */
-export async function saveCard(readState, address, handle, changes, send, attempts = 3) {
+export async function saveCard(readState, account, p, changes, send, attempts = 3) {
   for (let attempt = 1; ; attempt++) {
     const state = await readState();
-    const change = await editCard(state, address, handle, changes);
-    if (change.actions.length === 0) return undefined;
+    const edit = await editCard(state, account, p, changes);
+    if (edit.actions.length === 0) return undefined;
     try {
-      return await send(change);
+      return await send(edit);
     } catch (error) {
-      const read = change.actions[0].oldValue;
-      const now = await (await readState()).get(cardKey(address, handle));
+      const read = edit.actions.find((a) => a.key === cardKey(p))?.oldValue;
+      const now = await (await readState()).get(cardKey(p));
       if (attempt >= attempts || now === read) throw error;
     }
   }
 }
 
-/**
- * `handle` moving from `from` to `to` (either may be undefined: a claim, a
- * release): its `holds/` keys, which the policy requires with the move.
- */
-const moved = (handle, from, to) =>
-  from === to
-    ? []
-    : [...(from ? [{ key: holdsKey(from, handle), oldValue: "1" }] : []), ...(to ? [{ key: holdsKey(to, handle), newValue: "1" }] : [])];
-
-/** `to`'s default becomes `handle` if it has none it still holds. */
-async function defaultIfNone(state, to, handle) {
-  const chosen = await state.get(defaultKey(to));
-  if (isHandle(chosen) && chosen !== handle && (await resolve(state, chosen))?.holder === to) return [];
-  return set(defaultKey(to), chosen, handle).actions;
+/** Profile `p` shows `handle`, a name it holds. */
+export async function showName(state, account, p, handle) {
+  const token = await owned(state, account, p);
+  const entry = await resolve(state, handle);
+  if (entry?.profile !== p) throw new Error(`@${handle} isn't on this profile`);
+  return write([unchanged(profileKey(p), token.value), unchanged(nameKey(handle), entry.value), change(shownKey(p), await state.get(shownKey(p)), handle)]);
 }
 
-/** `from`'s card for `handle`, and its default if it was `handle`, removed as `handle` leaves. */
-async function leaving(state, from, handle) {
-  const card = await state.get(cardKey(from, handle));
-  const chosen = await state.get(defaultKey(from));
-  return [...(card !== undefined ? [{ key: cardKey(from, handle), oldValue: card }] : []), ...(chosen === handle ? [{ key: defaultKey(from), oldValue: chosen }] : [])];
+/** Sets or clears (`on` false) `admin` as an admin of profile `p`. */
+export async function setAdmin(state, account, p, admin, on = true) {
+  const token = await owned(state, account, p);
+  if (!isAddress(admin)) throw new Error(`not an address: ${admin}`);
+  const old = await state.get(adminKey(p, admin));
+  const next = on ? "1" : undefined;
+  if (old === next) return write([]);
+  return write([unchanged(profileKey(p), token.value), change(adminKey(p, admin), old, next)]);
 }
 
-/** `address` claims the free `handle`, for sale at `price` or not; it becomes the default if there is none. */
-export async function claim(state, address, handle, price) {
+/** `handle` put on profile `p`, which it shows if it shows none yet; `fresh` when `p` is being created. */
+async function claimFor(state, p, handle, price, fresh = false) {
   if (!isHandle(handle)) throw new Error(`${handle}: a handle is lowercase letters, digits and _`);
-  if ((await state.get(handleKey(handle))) !== undefined) throw new Error(`@${handle} is taken`);
+  if ((await state.get(nameKey(handle))) !== undefined) throw new Error(`@${handle} is taken`);
+  const shows = fresh ? undefined : await state.get(shownKey(p));
+  const showing = (await resolve(state, shows))?.profile === p;
   return write([
-    { key: handleKey(handle), newValue: holdingValue(address, price) },
-    ...moved(handle, undefined, address),
-    ...(await defaultIfNone(state, address, handle)),
+    change(nameKey(handle), undefined, tokenValue(p, { price })),
+    change(holdsKey(p, handle), undefined, "1"),
+    ...(showing ? [] : [change(shownKey(p), shows, handle)]),
   ]);
 }
 
-/** The holder's change of `entry` (as `resolve` returns it) to the same holder, for sale at `price` or not. */
-const reprice = (entry, price) =>
-  write([{ key: handleKey(entry.handle), oldValue: entry.value, newValue: holdingValue(entry.holder, price) }]);
+/** `account` claims the free `handle` for its profile `p`, for sale at `price` or not. */
+export async function claim(state, account, p, handle, price) {
+  const token = await owned(state, account, p);
+  return combine(write([unchanged(profileKey(p), token.value)]), await claimFor(state, p, handle, price));
+}
 
-/** The holder puts `entry` up for sale at `price`. Anyone may then take it at that price. */
-export const list = (entry, price) => {
+/** The name `handle`, which a profile of `account` holds: `[entry, its profile]`. */
+async function ownName(state, account, handle) {
+  const entry = await resolve(state, handle);
+  if (!entry) throw new Error(`No one holds @${handle}`);
+  return [entry, await owned(state, account, entry.profile)];
+}
+
+/** Puts `handle` up for sale at `price`. Anyone may then buy it at that price. */
+export async function list(state, account, handle, price) {
   if (price === undefined) throw new Error("a listing needs a price");
-  return reprice(entry, price);
-};
-
-/** The holder takes `entry` off sale. */
-export const unlist = (entry) => reprice(entry);
-
-/**
- * The holder gives `entry` to `to`, not for sale, taking down their card for
- * it. `to` makes it their default themselves: nobody writes another's records.
- */
-export async function transfer(state, entry, to) {
-  if (!isAddress(to)) throw new Error(`not an address: ${to}`);
-  if (to === entry.holder) throw new Error(`@${entry.handle} is already theirs`);
-  return write([
-    { key: handleKey(entry.handle), oldValue: entry.value, newValue: holdingValue(to) },
-    ...moved(entry.handle, entry.holder, to),
-    ...(await leaving(state, entry.holder, entry.handle)),
-  ]);
+  const [entry, token] = await ownName(state, account, handle);
+  return write([unchanged(profileKey(token.id), token.value), change(nameKey(handle), entry.value, tokenValue(entry.profile, { price }))]);
 }
 
-/** The holder gives `entry` up, taking down their card for it; anyone may claim it next. */
-export async function release(state, entry) {
-  return write([
-    { key: handleKey(entry.handle), oldValue: entry.value },
-    ...moved(entry.handle, entry.holder, undefined),
-    ...(await leaving(state, entry.holder, entry.handle)),
-  ]);
+/** Takes `handle` off sale, or back from an offer. */
+export async function unlist(state, account, handle) {
+  const [entry, token] = await ownName(state, account, handle);
+  return write([unchanged(profileKey(token.id), token.value), change(nameKey(handle), entry.value, entry.profile)]);
+}
+
+/** Offers `handle` to profile `to`, whose owner may then take it for nothing. */
+export async function offerName(state, account, handle, to) {
+  if (!isProfileId(to)) throw new Error(`not a profile: ${to}`);
+  const [entry, token] = await ownName(state, account, handle);
+  return write([unchanged(profileKey(token.id), token.value), change(nameKey(handle), entry.value, tokenValue(entry.profile, { offer: to }))]);
 }
 
 /**
- * `buyer` takes `entry` at its price; it becomes their default if they have
- * none. The seller's card for it stays theirs, unshown.
+ * `handle` moved onto profile `to`, which `account` owns: from another of its
+ * profiles, bought at its price, or taken as offered. Both profiles keep
+ * showing a name they hold: `to` shows it if it showed none, and the
+ * profile it leaves stops showing it. `created`: `to` is new, made by
+ * `createProfile` in the same transaction (see `combine`).
  */
-export async function buy(state, entry, buyer) {
-  if (entry.price === undefined) throw new Error(`@${entry.handle} is not for sale`);
-  if (entry.holder === buyer) throw new Error(`@${entry.handle} is already yours`);
+export async function moveName(state, account, handle, to, { created = false } = {}) {
+  const entry = await resolve(state, handle);
+  if (!entry) throw new Error(`No one holds @${handle}`);
+  if (entry.profile === to) throw new Error(`@${handle} is already on that profile`);
+  const target = created ? undefined : await owned(state, account, to);
+  const from = await profileToken(state, entry.profile);
+  const mine = from.owner === account;
+  if (!mine && entry.price === undefined && entry.offer !== to) throw new Error(`@${handle} is not for sale`);
+  const toShows = created ? undefined : await state.get(shownKey(to));
+  const fromShows = await state.get(shownKey(entry.profile));
   return write(
     [
-      { key: handleKey(entry.handle), oldValue: entry.value, newValue: holdingValue(buyer) },
-      ...moved(entry.handle, entry.holder, buyer),
-      ...(await defaultIfNone(state, buyer, entry.handle)),
+      unchanged(profileKey(entry.profile), from.value),
+      ...(target ? [unchanged(profileKey(to), target.value)] : []),
+      change(nameKey(handle), entry.value, to),
+      change(holdsKey(entry.profile, handle), "1", undefined),
+      change(holdsKey(to, handle), undefined, "1"),
+      ...((await resolve(state, toShows))?.profile === to ? [] : [change(shownKey(to), toShows, handle)]),
+      ...(mine && fromShows === handle ? [change(shownKey(entry.profile), handle, undefined)] : []),
     ],
-    [{ to: entry.holder, amount: entry.price }],
+    !mine && entry.price !== undefined ? [{ to: from.owner, amount: entry.price }] : [],
   );
+}
+
+/** `buyer` buys `handle` onto its profile `to` at the price the chain holds; the seller is paid in the same transaction. */
+export const buy = (state, buyer, handle, to, options) => moveName(state, buyer, handle, to, options);
+
+/** Gives `handle` up; anyone may claim it next. Its profile stops showing it. */
+export async function release(state, account, handle) {
+  const [entry, token] = await ownName(state, account, handle);
+  const shows = await state.get(shownKey(entry.profile));
+  return write([
+    unchanged(profileKey(token.id), token.value),
+    change(nameKey(handle), entry.value, undefined),
+    change(holdsKey(entry.profile, handle), "1", undefined),
+    ...(shows === handle ? [change(shownKey(entry.profile), handle, undefined)] : []),
+  ]);
+}
+
+/** Profile `p`, which `account` owns, set for sale at `price`, offered to account `offer`, or kept (neither). */
+export async function setProfileTerms(state, account, p, terms = {}) {
+  if (terms.offer !== undefined && !isAddress(terms.offer)) throw new Error(`not an address: ${terms.offer}`);
+  const token = await owned(state, account, p);
+  return write([change(profileKey(p), token.value, tokenValue(account, terms))]);
+}
+
+/**
+ * `account` takes profile `p`, with its card and names: bought at its price,
+ * paid to its owner, or taken as offered to `account`.
+ */
+export async function takeProfile(state, account, p) {
+  const token = await profileToken(state, p);
+  if (!token) throw new Error("No such profile");
+  if (token.owner === account) throw new Error("That profile is already yours");
+  if (token.price === undefined && token.offer !== account) throw new Error("That profile is not for sale");
+  return write(
+    [change(profileKey(p), token.value, account), change(ownsKey(token.owner, p), "1", undefined), change(ownsKey(account, p), undefined, "1")],
+    token.price !== undefined ? [{ to: token.owner, amount: token.price }] : [],
+  );
+}
+
+/** Sets `account`'s field outside its profiles, or removes it when undefined. */
+export async function setField(state, account, field, value) {
+  if (field === "") throw new Error("(empty): not a field name");
+  const key = fieldKey(account, field);
+  const oldValue = await state.get(key);
+  if (value === oldValue) return write([]);
+  return write([change(key, oldValue, value)]);
 }

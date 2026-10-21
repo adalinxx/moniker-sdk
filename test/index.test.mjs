@@ -16,11 +16,12 @@ test("defaults to the testnet trial chain and its shared hosts", () => {
   assert.deepEqual(moniker.nodes, DEFAULTS.nodes);
 });
 
-test("labels an account by name, then @handle, then the end of its ID", () => {
+test("labels a profile by name, then @handle, then the end of its id", () => {
   const { label } = createMoniker({ sdk });
-  assert.equal(label({ address, name: "Ada", handle: "ada" }), "Ada");
-  assert.equal(label({ address, handle: "ada" }), "@ada");
-  assert.equal(label({ address }), "…dambbt6a");
+  const id = "abcdefghijklmnop";
+  assert.equal(label({ id, name: "Ada", handle: "ada" }), "Ada");
+  assert.equal(label({ id, handle: "ada" }), "@ada");
+  assert.equal(label({ id }), "Profile …klmnop");
 });
 
 test("links to the Moniker app", () => {
@@ -33,7 +34,7 @@ test("a photo with no CID is null", async () => {
 });
 
 test("writes need a wallet", async () => {
-  await assert.rejects(createMoniker({ sdk }).save("@ada", { name: "Ada" }, { wallet: undefined }), /Lattice Wallet/);
+  await assert.rejects(createMoniker({ sdk }).save("abcdefghijklmnop", { name: "Ada" }, { wallet: undefined }), /Lattice Wallet/);
 });
 
 test("checks addresses and handles", () => {

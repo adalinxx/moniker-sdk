@@ -21,20 +21,20 @@
   <pre>import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.1.2/src/browser.mjs";
 const moniker = createMoniker();
 defineMonikerName(moniker);
-// &lt;moniker-name address="bafyrei…"&gt;&lt;/moniker-name&gt;</pre>
+// &lt;moniker-name profile="…"&gt;&lt;/moniker-name&gt;</pre>
 </main>
 <script type="module">
   import { createMoniker, defineMonikerName } from "./src/browser.mjs";
-  // ?address=…&node=…&chain=… for trying it against another chain.
+  // ?profile=…&node=…&chain=… for trying it against another chain.
   const query = new URLSearchParams(location.search);
   const moniker = createMoniker({
     ...(query.get("node") && { nodes: [query.get("node")] }),
     ...(query.get("chain") && { chain: query.get("chain").split("/") }),
   });
   defineMonikerName(moniker);
-  const address = query.get("address") ?? (await moniker.resolve("moniker"));
+  const id = query.get("profile") ?? (await moniker.resolve("moniker"));
   const byline = document.createElement("moniker-name");
-  byline.setAttribute("address", address ?? "");
+  byline.setAttribute("profile", id ?? "");
   document.getElementById("post").prepend(byline);
 </script>
 </body>
