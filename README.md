@@ -4,11 +4,12 @@ Moniker profiles and names for any Lattice dApp. [Moniker](https://github.com/ad
 is the one profile chain every Lattice app shares:
 
 - An **account** is a key. It is never shown, only checked.
-- A **profile** is the public identity: a card (name, bio, photo, links). An
-  account owns profiles; a profile can be sold or given whole, card and names
-  with it, and moved to a new key if one is lost.
-- A **name** (`@alice`) is held by a profile, which shows one of its names.
-  Names are sold or given on their own.
+- A **profile** is the public identity: a card (name, bio, photo, links) and
+  a default name. An account owns profiles; a profile can be sold or given
+  whole, with its card and followers, and moved to a new key if one is lost.
+- A **name** (`@alice`) is an asset an account owns, like a domain: its owner
+  points it at any profile, sells it or gives it. A profile shows its default
+  name only while that name points at it.
 
 A record your app writes says which profile it is from, and your app shows
 that profile. One import, no key handling: reads come from Moniker's nodes and
@@ -35,7 +36,8 @@ of `src/` and `vendor/` works too; review upgrades like any dependency.
 const moniker = createMoniker();                    // testnet trial by default; or { nodes, chain }
 const p = await moniker.profile(id);                // { id, owner, handle?, name?, description?, avatar?, url?, links? }
 const people = await moniker.profiles(ids);         // a feed's bylines, in order, from one read
-const q = await moniker.profileOf("@alice");        // the profile holding a name, or undefined
+const q = await moniker.profileOf("@alice");        // the profile a name points at, or undefined
+const n = await moniker.name("@alice");             // { handle, owner, price?, offer?, profile? }
 const mine = await moniker.profilesOf(address);     // an account's profiles
 img.src = await moniker.photo(p.avatar);            // an object URL, or null
 moniker.label(p);                                   // name, else @handle, else the end of the profile id
@@ -44,9 +46,11 @@ moniker.pageURL(`@${p.handle}`);                    // its Moniker page (or by i
 const wallet = window.lattice;                      // the Lattice Wallet extension
 const { id } = await moniker.createProfile({ card: { name: "Alice" }, handle: "alice" }, { wallet });
 await moniker.save(id, { links: [{ label: "Site", url: "https://alice.example" }] }, { wallet });
-await moniker.claim("@alice_art", id, { wallet });  // another name for the same profile
+await moniker.claim("@alice_art", { point: id }, { wallet }); // a name of your own, pointed at the profile
+await moniker.point("@alice_art", otherId, { wallet });       // point it elsewhere (anyone's profile)
+await moniker.showName(id, "@alice_art", { wallet });         // the profile's default name: one pointing at it
 await moniker.setAdmin(id, otherAccount, true, { wallet }); // may post as the profile in apps
-// names: sell, unlist, offer, move, buy, release · profiles: sellProfile, takeProfile
+// names: sell, unlist, offer (to an account), buy (with { point }), release · profiles: sellProfile, takeProfile
 
 defineMonikerName(moniker);                         // <moniker-name profile="…" size="24"></moniker-name>
 ```
