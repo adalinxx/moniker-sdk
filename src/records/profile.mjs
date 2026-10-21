@@ -24,7 +24,7 @@
 // left out, never fatal.
 
 /** The CID of the profile policy module built from `policy/`. */
-export const MONIKER_POLICY = "bafyreiedacmfpkjdebxm6t7farcj6s5lrb7wn777ix4a5akjtn7lzxf5qm";
+export const MONIKER_POLICY = "bafyreihrwx7omtfgzphpwbtvrfqqxvfyj7ikubx3feky4c6nnpennmywii";
 
 /** Where Moniker lives. */
 export const MONIKER_CHAIN = ["Nexus", "moniker"];
