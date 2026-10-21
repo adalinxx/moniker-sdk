@@ -24,7 +24,7 @@
 // left out, never fatal.
 
 /** The CID of the profile policy module built from `policy/`. */
-export const MONIKER_POLICY = "bafyreia2jf6qqz5mrxkuznwxdlzm5f6yfg246zq76sfqb4q5sahcgppooe";
+export const MONIKER_POLICY = "bafyreiedacmfpkjdebxm6t7farcj6s5lrb7wn777ix4a5akjtn7lzxf5qm";
 
 /** Where Moniker lives. */
 export const MONIKER_CHAIN = ["Nexus", "moniker"];
@@ -125,16 +125,18 @@ export function readToken(value, valid) {
   const rest = value.slice(at + 1);
   if (!valid(holder)) return undefined;
   if (value[at] === ">") return valid(rest) && rest !== holder ? { holder, offer: rest } : undefined;
-  if (!/^(0|[1-9][0-9]*)$/.test(rest) || BigInt(rest) >= 2n ** 64n) return undefined;
+  if (!/^(0|[1-9][0-9]*)$/.test(rest) || BigInt(rest) >= 2n ** 63n) return undefined;
   return { holder, price: BigInt(rest) };
 }
 
 /** A token value: its holder, with a price for anyone or an offer to one taker, or neither. */
 export function tokenValue(holder, { price, offer } = {}) {
   if (price !== undefined) {
-    if (typeof price !== "bigint" || price < 0n || price >= 2n ** 64n) throw new Error(`bad price: ${price}`);
+    // A credit pays at most 2^63 - 1.
+    if (typeof price !== "bigint" || price < 0n || price >= 2n ** 63n) throw new Error(`bad price: ${price}`);
     return `${holder}@${price}`;
   }
+  if (offer === holder) throw new Error("an offer goes to someone else");
   return offer === undefined ? holder : `${holder}>${offer}`;
 }
 
@@ -261,19 +263,24 @@ const change = (key, oldValue, newValue) => ({ key, ...(oldValue !== undefined &
 const unchanged = (key, value) => ({ key, oldValue: value, newValue: value });
 
 /**
- * One write of several, as one transaction. A key rewritten unchanged, to
- * show its value, gives way to a real change of the same key.
+ * One write of several, as one transaction. Each key is written once, where
+ * it first comes (the policy reads the actions in order): a key rewritten
+ * unchanged, to show its value, gives way to a real change of the same key.
+ * Two real changes of one key are an error.
  */
 export function combine(...writes) {
-  const actions = writes.flatMap((w) => w.actions);
-  const real = new Set(actions.filter((a) => a.oldValue !== a.newValue).map((a) => a.key));
+  const at = new Map();
   const kept = [];
-  const seen = new Set();
-  for (const action of actions) {
+  for (const action of writes.flatMap((w) => w.actions)) {
     const shows = action.oldValue !== undefined && action.oldValue === action.newValue;
-    if (shows && (real.has(action.key) || seen.has(action.key))) continue;
-    seen.add(action.key);
-    kept.push(action);
+    const index = at.get(action.key);
+    if (index === undefined) {
+      at.set(action.key, kept.push(action) - 1);
+    } else if (!shows) {
+      const first = kept[index];
+      if (first.oldValue === undefined || first.oldValue !== first.newValue) throw new Error(`${action.key} is changed twice`);
+      kept[index] = action;
+    }
   }
   return write(kept, writes.flatMap((w) => w.payments ?? []));
 }
@@ -445,7 +452,7 @@ export async function moveName(state, account, handle, to, { created = false } =
       ...((await resolve(state, toShows))?.profile === to ? [] : [change(shownKey(to), toShows, handle)]),
       ...(mine && fromShows === handle ? [change(shownKey(entry.profile), handle, undefined)] : []),
     ],
-    !mine && entry.price !== undefined ? [{ to: from.owner, amount: entry.price }] : [],
+    !mine && entry.price > 0n ? [{ to: from.owner, amount: entry.price }] : [],
   );
 }
 
@@ -480,9 +487,16 @@ export async function takeProfile(state, account, p) {
   if (!token) throw new Error("No such profile");
   if (token.owner === account) throw new Error("That profile is already yours");
   if (token.price === undefined && token.offer !== account) throw new Error("That profile is not for sale");
+  // The admins were the last owner's: they go with the sale.
+  const admins = await adminsOf(state, p);
   return write(
-    [change(profileKey(p), token.value, account), change(ownsKey(token.owner, p), "1", undefined), change(ownsKey(account, p), undefined, "1")],
-    token.price !== undefined ? [{ to: token.owner, amount: token.price }] : [],
+    [
+      change(profileKey(p), token.value, account),
+      change(ownsKey(token.owner, p), "1", undefined),
+      change(ownsKey(account, p), undefined, "1"),
+      ...admins.map((admin) => change(adminKey(p, admin), "1", undefined)),
+    ],
+    token.price > 0n ? [{ to: token.owner, amount: token.price }] : [],
   );
 }
 
