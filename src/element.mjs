@@ -1,5 +1,6 @@
-// <moniker-name address="bafyrei…"> for any page: the account's photo, name
-// and @handle, linked to its Moniker page. Register it once with a Moniker
+// <moniker-name address="bafyrei…"> for any page: the photo, name and
+// @handle of the handle the account goes by, linked to that handle's Moniker
+// page (or the account's, when it goes by none). Register it once with a Moniker
 // from createMoniker:
 //
 //   defineMonikerName(moniker);
@@ -68,7 +69,7 @@ export function defineMonikerName(moniker, tag = "moniker-name") {
 
         const outer = this.hasAttribute("plain")
           ? document.createElement("span")
-          : Object.assign(document.createElement("a"), { href: moniker.pageURL(address), target: "_blank", rel: "noopener" });
+          : Object.assign(document.createElement("a"), { href: moniker.pageURL(p.handle ? `@${p.handle}` : address), target: "_blank", rel: "noopener" });
         const photo = document.createElement("span");
         photo.className = "photo";
         photo.style.cssText = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`;

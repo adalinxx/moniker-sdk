@@ -1,8 +1,11 @@
 # moniker-sdk
 
 Moniker profiles and handles for any Lattice dApp. [Moniker](https://github.com/adalinxx/moniker)
-is the one profile chain every Lattice app shares: a card per account (name,
-bio, photo, links) and sellable `@handles`.
+is the one profile chain every Lattice app shares: sellable `@handles`, each
+with its card (name, bio, photo, links). An account is a key that holds
+handles and goes by one of them: its default, or its only one. So an app that
+knows only who signed something shows that handle's card; one person may keep
+an account per handle, and act as each by switching account in their wallet.
 
 One import, no key handling: reads come from Moniker's nodes and are checked by
 CID; writes go to the person's Lattice Wallet, which shows and signs them.
@@ -25,17 +28,21 @@ of `src/` and `vendor/` works too; review upgrades like any dependency.
 
 ```js
 const moniker = createMoniker();                 // testnet trial by default; or { nodes, chain }
-const p = await moniker.profile(address);        // { address, name?, description?, avatar?, url?, handle?, links? }
+const p = await moniker.who(address);            // { address, handle?, name?, description?, avatar?, url?, links? }
 const people = await moniker.profiles(authors);  // a feed's bylines, in order, from one read
-const who = await moniker.resolve("@alice");     // the holder's address, or undefined
+const card = await moniker.card("@alice");       // the handle's card, with `address` its holder; or undefined
+const holder = await moniker.resolve("@alice");  // the holder's address, or undefined
+const held = await moniker.names(address);       // the handles an account holds
 img.src = await moniker.photo(p.avatar);         // an object URL, or null
-moniker.label(p);                                // name, else @handle, else a short address
-moniker.pageURL(address);                        // their Moniker page
+moniker.label(p);                                // name, else @handle, else the end of the account's ID
+moniker.pageURL(p.handle ? `@${p.handle}` : address); // its Moniker page
 
 const wallet = window.lattice;                   // the Lattice Wallet extension
-await moniker.save({ name: "Alice", links: [{ label: "Site", url: "https://alice.example" }] }, { wallet });
+await moniker.claim("alice", { wallet });        // the account's first handle becomes the one it goes by
+await moniker.save("@alice", { name: "Alice", links: [{ label: "Site", url: "https://alice.example" }] }, { wallet });
+await moniker.setDefault("@alice", { wallet });  // which handle the account goes by
 await moniker.setField("app.myapp.theme", "dark", { wallet });
-await moniker.claim("alice", { wallet });        // also sell, unlist, buy, give, release
+// also sell, unlist, buy, give, release
 
 defineMonikerName(moniker);                      // <moniker-name address="bafyrei…" size="24"></moniker-name>
 ```
@@ -47,7 +54,12 @@ fee, so a new account needs no coins to claim a handle or save a page. Pass
 `save` keeps card fields it does not know and retries when another app saved
 the card first. Store your app's own data in fields named `app.<your app>.*`.
 
-`<moniker-name>` shows the photo, name and `@handle`, linked to the page
+A handle that changes hands starts with an empty card: cards are kept under
+their holder (`user/<holder>/card/<handle>`). An account goes by its default
+only while it still holds it; one that sold it and holds several others goes
+by none until it chooses, and apps show the end of its ID.
+
+`<moniker-name>` shows the photo, name and `@handle` the account goes by, linked to that handle's page
 (`plain` drops the link); restyle it with `--moniker-ink`, `--moniker-muted`,
 `--moniker-accent` and `--moniker-avatar`. See [`demo.html`](demo.html), live at
 https://adalinxx.github.io/moniker-sdk/demo.html.
@@ -61,7 +73,7 @@ is, `src/index.mjs`) and pass it: `createMoniker({ sdk })`.
 - `src/browser.mjs`: the same, bound to the vendored Lattice SDK.
 - `src/element.mjs`: `<moniker-name>`.
 - `src/records/`: reading and writing Moniker's records: `profile.mjs` (cards,
-  fields, handles), `state.mjs` (reads state by descending the trie, checked
+  default, fields, handles), `state.mjs` (reads state by descending the trie, checked
   by CID), `wallet.mjs` (the request the Lattice Wallet signs). The one copy:
   the Moniker app and its tests use these through a submodule.
 - `vendor/lattice-sdk.js`: the Lattice SDK, bundled for browsers.
