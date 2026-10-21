@@ -19,13 +19,13 @@ signs them.
 
 Import a release, never a branch: code your users run should change only when
 you choose to upgrade. A tag through jsDelivr's GitHub mirror is fixed
-(`@v0.1.2`; a commit hash pins harder still):
+(`@v0.2.0`; a commit hash pins harder still):
 
 ```js
-import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.1.2/src/browser.mjs";
+import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.2.0/src/browser.mjs";
 ```
 
-Or with npm, from the tag: `npm install github:adalinxx/moniker-sdk#v0.1.2`,
+Or with npm, from the tag: `npm install github:adalinxx/moniker-sdk#v0.2.0`,
 then `import { createMoniker } from "moniker-sdk/browser"`. Vendoring a copy
 of `src/` and `vendor/` works too; review upgrades like any dependency.
 
