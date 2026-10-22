@@ -20,7 +20,7 @@
 import { ACCOUNT, change, chainPath, checkedTerms, heldToken, isHandle, isProfileId, paymentFor, takeable, tokenValue, unchanged, write } from "./shared.mjs";
 
 /** The CID of the Moniker policy module this release reads and writes for; set at each release. */
-export const MONIKER_POLICY = "";
+export const MONIKER_POLICY = "bafyreieg5pneszyq5e6ygfwg2otdf5cecekbbw25sg5kkr7letnfb4jjve";
 
 /**
  * Whether a chain spec (see state.mjs `chainSpec`) runs the Moniker policy.
