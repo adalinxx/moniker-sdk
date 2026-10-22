@@ -1,6 +1,6 @@
 // Moniker in a browser page, with the Lattice SDK included:
 //
-//   import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.2.0/src/browser.mjs";
+//   import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.3.0/src/browser.mjs";
 //   const moniker = createMoniker();          // or createMoniker({ nodes, chain })
 //   defineMonikerName(moniker);               // then <moniker-name address="…">
 import * as sdk from "../vendor/lattice-sdk.js";

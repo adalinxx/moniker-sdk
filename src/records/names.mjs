@@ -159,7 +159,7 @@ const andShow = async (state, account, handle, w, show) => (show ? combine(w, aw
 
 /**
  * `account` claims the free `handle`, for sale at `price` or not, pointed at
- * account `point` if given (`true`: itself); with `show`, pointed at itself
+ * account `point` if given (`true`: itself), else nowhere; with `show`, pointed at itself
  * and shown as its handle, in the same transaction.
  */
 export async function claim(state, account, handle, { price, point, show = false } = {}) {
@@ -169,7 +169,8 @@ export async function claim(state, account, handle, { price, point, show = false
   const claimed = write([
     change(nameKey(handle), undefined, tokenValue(account, { price })),
     change(namesKey(account, handle), undefined, "1"),
-    ...(to != null ? repoint(handle, await state.get(pointsKey(handle)), to) : []),
+    // A pointer a release left behind is cleared, unless the claimer sets one.
+    ...repoint(handle, await state.get(pointsKey(handle)), to),
   ]);
   return andShow(state, account, handle, claimed, show);
 }

@@ -1,6 +1,6 @@
 {
   "name": "moniker-sdk",
-  "version": "0.1.2",
+  "version": "0.3.0",
   "description": "Moniker @names for Lattice dApps",
   "type": "module",
   "exports": {

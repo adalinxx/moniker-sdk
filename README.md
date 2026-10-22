@@ -19,13 +19,13 @@ the person's Lattice Wallet, which shows and signs them. No key handling here.
 
 Import a release, never a branch: code your users run should change only when
 you choose to upgrade. A tag through jsDelivr's GitHub mirror is fixed
-(`@v0.2.0`; a commit hash pins harder still):
+(`@v0.3.0`; a commit hash pins harder still):
 
 ```js
-import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.2.0/src/browser.mjs";
+import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.3.0/src/browser.mjs";
 ```
 
-Or with npm, from the tag: `npm install github:adalinxx/moniker-sdk#v0.2.0`,
+Or with npm, from the tag: `npm install github:adalinxx/moniker-sdk#v0.3.0`,
 then `import { createMoniker } from "moniker-sdk/browser"`. Vendoring a copy
 of `src/` and `vendor/` works too; review upgrades like any dependency.
 
@@ -68,10 +68,13 @@ await moniker.claim("@alice", { show: true }, { wallet });    // claimed, pointe
 await moniker.point("@alice", otherAccount, { wallet });      // or null: nowhere
 await moniker.sell("@alice", 500n, { wallet });               // unlist, offer(handle, account)
 await moniker.buy("@alice", { point: true }, { wallet });     // the pointer is cleared unless you set one
-await moniker.release("@alice", { wallet });                  // with its pointer
+await moniker.release("@alice", { wallet });                  // and deletes its pointer
 ```
 
 A sale clears the name's pointer, so the seller stops showing it at once.
+Releasing deletes the pointer when done through this SDK; the policy only
+allows deleting it, not requires it, so `claim` and `buy` clear any pointer a
+release left behind unless you set one.
 `field` and `setField` keep an account's own values, such as `key.x25519` or
 `app.<your app>.<field>`.
 

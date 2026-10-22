@@ -96,6 +96,22 @@ test("a released name goes with its pointer, and is free again", async () => {
   assert.ok(!w.names.submit(BOB, { actions: releaseAndPoint }));
 });
 
+test("a claim clears a pointer a hand-built release left behind, unless the claimer sets one", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 100 });
+  await w.moniker.claim("left", { show: true }, { wallet: w.wallet(ALICE) });
+  // Released by hand, keeping the pointer: the policy allows it, and Alice still shows @left.
+  assert.ok(w.names.submit(ALICE, { actions: [change("name/left", ALICE, undefined), change(names.namesKey(ALICE, "left"), "1", undefined)] }));
+  assert.equal(await w.moniker.handleOf(ALICE), "left");
+  await w.moniker.claim("left", {}, { wallet: w.wallet(BOB) });
+  assert.equal(await w.moniker.pointer("left"), undefined);
+  assert.equal(await w.moniker.handleOf(ALICE), undefined);
+  // Left behind again, and replaced by the claimer's own pointer.
+  await w.moniker.point("left", ALICE, { wallet: w.wallet(BOB) });
+  assert.ok(w.names.submit(BOB, { actions: [change("name/left", BOB, undefined), change(names.namesKey(BOB, "left"), "1", undefined)] }));
+  await w.moniker.claim("left", { point: true }, { wallet: w.wallet(BOB) });
+  assert.equal(await w.moniker.pointer("left"), BOB);
+});
+
 test("an account shows a handle only while it names it and the handle points at it", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 100 });
   // Alice's name, pointed elsewhere: showName points it at her and names it, in one transaction.
