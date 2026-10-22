@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.mjs",
     "./browser": "./src/browser.mjs",
-    "./element": "./src/element.mjs"
+    "./element": "./src/element.mjs",
+    "./picker": "./src/picker.mjs"
   },
   "files": [
     "src",
