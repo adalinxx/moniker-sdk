@@ -75,7 +75,9 @@ export const ownersOf = (state, handles) => Promise.all(handles.map(async (handl
 /** The handle `account` shows: the one it names, while that handle points at it; else undefined. */
 export async function handleOf(state, account) {
   const handle = await state.get(shownKey(account));
-  return isHandle(handle) && (await state.get(pointsKey(handle))) === account ? handle : undefined;
+  if (!isHandle(handle) || (await state.get(pointsKey(handle))) !== account) return undefined;
+  // A name a release left pointing is free: it shows for nobody.
+  return (await state.get(nameKey(handle))) === undefined ? undefined : handle;
 }
 
 /** `handleOf` for many accounts, in order, from one state. */

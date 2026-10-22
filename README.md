@@ -7,8 +7,8 @@ the names chain every app shares.
 - A **name** (`@alice`) is an asset an account owns, like a domain: it sells
   it, gives it, and points it at an account, any account.
 - An account **shows** `@alice`, in every app, only while it names `alice`
-  (`user/<account>/name` on Moniker) **and** `alice` points at it. Both live
-  on Moniker, so one read decides; your app needs nothing on its own chain
+  (`user/<account>/name` on Moniker) **and** `alice` is held and points at
+  it. All of it lives on Moniker, so one state decides; your app needs nothing on its own chain
   for handles.
 
 Your app keeps its own records, cards included, on its own chain, keyed by

@@ -99,9 +99,10 @@ test("a released name goes with its pointer, and is free again", async () => {
 test("a claim clears a pointer a hand-built release left behind, unless the claimer sets one", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 100 });
   await w.moniker.claim("left", { show: true }, { wallet: w.wallet(ALICE) });
-  // Released by hand, keeping the pointer: the policy allows it, and Alice still shows @left.
+  // Released by hand, keeping the pointer: the policy allows it, but a free name shows for nobody.
   assert.ok(w.names.submit(ALICE, { actions: [change("name/left", ALICE, undefined), change(names.namesKey(ALICE, "left"), "1", undefined)] }));
-  assert.equal(await w.moniker.handleOf(ALICE), "left");
+  assert.equal(await w.moniker.pointer("left"), ALICE);
+  assert.equal(await w.moniker.handleOf(ALICE), undefined);
   await w.moniker.claim("left", {}, { wallet: w.wallet(BOB) });
   assert.equal(await w.moniker.pointer("left"), undefined);
   assert.equal(await w.moniker.handleOf(ALICE), undefined);
