@@ -176,9 +176,7 @@ export function profilesClient(link, moniker) {
       const owned = await profiles.profilesOf(await state(), address);
       return read(owned.map((p) => p.id));
     },
-    /** The accounts acting as admins of profile `p`: those its current owner named. */
-    admins: async (p) => profiles.adminsOf(await state(), p),
-    /** Whether an account may act as profile `p` now: its owner or an admin. */
+    /** Whether an account may act as profile `p` now: its owner. */
     actsFor: async (address, p) => profiles.actsFor(await state(), address, p),
     /**
      * The profile `@handle` points at on this chain, as `profile` returns it,
@@ -205,7 +203,7 @@ export function profilesClient(link, moniker) {
       return { id, sent: await send(link, wallet, write) };
     },
     /**
-     * Changes a profile's card, as its owner or an admin: each key of
+     * Changes a profile's card, as its owner: each key of
      * `changes` sets a field (`name`, `description`, `avatar`, `header`,
      * `url`, `links`, or one of your own) or removes it when undefined, null
      * or "". Fields this library does not know are kept. Retried if another
@@ -228,8 +226,6 @@ export function profilesClient(link, moniker) {
     },
     /** Profile `p` shows no handle. */
     stopHandle: (p, { wallet }) => act(wallet, (s, a) => profiles.setShown(s, a, p, undefined)),
-    /** Its owner makes an account an admin of profile `p`, or stops (`on` false). */
-    setAdmin: (p, address, on, { wallet }) => act(wallet, (s, a) => profiles.setAdmin(s, a, p, address, on)),
     /** Puts profile `p` up for sale at `price`. */
     sell: (p, price, { wallet }) => act(wallet, (s, a) => profiles.setProfileTerms(s, a, p, { price: BigInt(price) })),
     /** Takes profile `p` off sale, or back from an offer. */
@@ -240,8 +236,8 @@ export function profilesClient(link, moniker) {
     buy: (p, { wallet }) => act(wallet, (s, a) => profiles.takeProfile(s, a, p)),
     /**
      * The actions that must come before records `account` writes as profile
-     * `p` in `state`: the profile rewritten unchanged, and an admin's admin
-     * key too. Throws if `account` doesn't act for `p`.
+     * `p` in `state`: the profile rewritten unchanged. Throws unless
+     * `account` owns `p`.
      */
     proof: (s, p, account) => profiles.proof(s, p, account),
     /** Sends `write` (`{ actions, payments? }`, records keyed by `p`) as profile `p`, with the proof first. */

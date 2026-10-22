@@ -33,7 +33,7 @@ test("a card is saved field by field, keeps fields it doesn't know, and retries 
   assert.deepEqual(JSON.parse(w.apps.map.get(profiles.cardKey(id))), { name: "Alice", pronouns: "she/her", url: "https://alice.example", links: [{ label: "Site", url: "https://alice.example" }] });
   assert.equal(await w.profiles.save(id, { name: "Alice" }, { wallet }), undefined, "nothing changed");
   await assert.rejects(w.profiles.save(id, { links: [{ label: "x", url: "javascript:alert(1)" }] }, { wallet }), /not an http/);
-  await assert.rejects(w.profiles.save(id, { name: "Not Alice" }, { wallet: w.wallet(BOB) }), /don't act for/);
+  await assert.rejects(w.profiles.save(id, { name: "Not Alice" }, { wallet: w.wallet(BOB) }), /isn't yours/);
   // Another app saves first: the save reads again and lands on the new card.
   let first = true;
   const racing = {
@@ -80,54 +80,41 @@ test("useHandle points the handle on Moniker and names it on the profile; both a
   assert.equal((await w.profiles.profile(second)).handle, undefined);
 });
 
-test("an admin writes as the profile; the policy refuses anyone who doesn't act for it", async () => {
-  const w = world({ [ALICE]: 100, [BOB]: 100, [CAROL]: 100 });
+test("the owner writes as the profile; the policy refuses anyone else", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 100 });
   const { id } = await w.profiles.createProfile({ card: { name: "Band" } }, { wallet: w.wallet(ALICE) });
-  await w.profiles.setAdmin(id, BOB, true, { wallet: w.wallet(ALICE) });
-  assert.equal(w.apps.map.get(profiles.adminKey(id, BOB)), ALICE, "an admin key holds the owner who named it");
-  assert.deepEqual(await w.profiles.admins(id), [BOB]);
-  assert.ok(await w.profiles.actsFor(BOB, id));
-  assert.deepEqual(await w.profiles.proof(w.apps.state, id, BOB), [
-    { key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE },
-    { key: profiles.adminKey(id, BOB), oldValue: ALICE, newValue: ALICE },
-  ]);
-  await w.profiles.writeAs(id, place(id, "1", "{}"), { wallet: w.wallet(BOB) });
-  await w.profiles.save(id, { description: "Plays loud" }, { wallet: w.wallet(BOB) });
-  assert.equal(w.apps.map.get(`user/${id}/place/1`), "{}");
-  // An admin doesn't name admins.
-  await assert.rejects(w.profiles.setAdmin(id, CAROL, true, { wallet: w.wallet(BOB) }), /isn't yours/);
-  // Carol doesn't act for it: refused here, and by the policy with any proof she could write.
-  await assert.rejects(w.profiles.writeAs(id, place(id, "2", "{}"), { wallet: w.wallet(CAROL) }), /don't act for/);
-  assert.ok(!w.apps.submit(CAROL, place(id, "2", "{}")));
-  assert.ok(!w.apps.submit(CAROL, combine({ actions: [{ key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE }] }, place(id, "2", "{}"))));
-  // Bob's proof without his admin key isn't enough.
-  assert.ok(!w.apps.submit(BOB, combine({ actions: [{ key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE }] }, place(id, "2", "{}"))));
-  await w.profiles.setAdmin(id, BOB, false, { wallet: w.wallet(ALICE) });
+  assert.ok(await w.profiles.actsFor(ALICE, id));
   assert.ok(!(await w.profiles.actsFor(BOB, id)));
+  assert.deepEqual(await w.profiles.proof(w.apps.state, id, ALICE), [{ key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE }]);
+  await w.profiles.writeAs(id, place(id, "1", "{}"), { wallet: w.wallet(ALICE) });
+  assert.equal(w.apps.map.get(`user/${id}/place/1`), "{}");
+  // Bob doesn't own it: refused here, and by the policy with or without the proof.
+  await assert.rejects(w.profiles.writeAs(id, place(id, "2", "{}"), { wallet: w.wallet(BOB) }), /isn't yours/);
+  await assert.rejects(w.profiles.save(id, { name: "Mine" }, { wallet: w.wallet(BOB) }), /isn't yours/);
+  assert.ok(!w.apps.submit(BOB, place(id, "2", "{}")));
+  assert.ok(!w.apps.submit(BOB, combine({ actions: [{ key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE }] }, place(id, "2", "{}"))));
+  // Nor may he write the profile's own records, or an admin key, which is now just another field.
+  const card = { key: profiles.cardKey(id), oldValue: w.apps.map.get(profiles.cardKey(id)), newValue: '{"name":"Mine"}' };
+  assert.ok(!w.apps.submit(BOB, combine({ actions: [{ key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE }] }, { actions: [card] })));
+  const adminKey = { key: `about/${id}/admin/${BOB}`, oldValue: ALICE, newValue: ALICE };
+  assert.ok(w.apps.submit(ALICE, combine({ actions: [{ key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE }] }, { actions: [{ key: adminKey.key, newValue: ALICE }] })));
+  assert.ok(!w.apps.submit(BOB, combine({ actions: [{ key: profiles.profileKey(id), oldValue: ALICE, newValue: ALICE }] }, { actions: [adminKey] }, place(id, "2", "{}"))));
+  // A proof refers to a missing profile: nothing to prove.
+  await assert.rejects(profiles.proof(w.apps.state, "aaaaaaaaaaaaaaaa", ALICE), /isn't yours/);
 });
 
-test("a sold profile moves its owns keys, and its admins stop acting at once", async () => {
-  const w = world({ [ALICE]: 100, [BOB]: 100, [CAROL]: 1000 });
+test("a sold profile moves its owns keys, and only its new owner writes as it", async () => {
+  const w = world({ [ALICE]: 100, [CAROL]: 1000 });
   const { id } = await w.profiles.createProfile({ card: { name: "Tess Bakes" } }, { wallet: w.wallet(ALICE) });
-  await w.profiles.setAdmin(id, BOB, true, { wallet: w.wallet(ALICE) });
   await w.profiles.sell(id, 700n, { wallet: w.wallet(ALICE) });
   await w.profiles.buy(id, { wallet: w.wallet(CAROL) });
-  assert.equal(w.apps.coins.get(ALICE), 100n - 3n + 700n);
+  assert.equal(w.apps.coins.get(ALICE), 100n - 2n + 700n);
   assert.deepEqual([w.apps.map.get(profiles.ownsKey(ALICE, id)), w.apps.map.get(profiles.ownsKey(CAROL, id))], [undefined, "1"]);
   assert.deepEqual(await w.profiles.profilesOf(ALICE), []);
   assert.deepEqual((await w.profiles.profilesOf(CAROL)).map((p) => [p.id, p.name]), [[id, "Tess Bakes"]]);
-  // Bob was Alice's admin: the key stays, and acts no more.
-  assert.deepEqual(await w.profiles.admins(id), []);
-  assert.ok(!(await w.profiles.actsFor(BOB, id)));
-  await assert.rejects(w.profiles.writeAs(id, place(id, "1", "{}"), { wallet: w.wallet(BOB) }), /don't act for/);
-  const stale = [
-    { key: profiles.profileKey(id), oldValue: CAROL, newValue: CAROL },
-    { key: profiles.adminKey(id, BOB), oldValue: ALICE, newValue: ALICE },
-  ];
-  assert.ok(!w.apps.submit(BOB, combine({ actions: stale }, place(id, "1", "{}"))));
-  // The new owner writes as it; the old one can't.
   await w.profiles.writeAs(id, place(id, "1", "{}"), { wallet: w.wallet(CAROL) });
-  await assert.rejects(w.profiles.save(id, { name: "Mine" }, { wallet: w.wallet(ALICE) }), /don't act for/);
+  await assert.rejects(w.profiles.writeAs(id, place(id, "2", "{}"), { wallet: w.wallet(ALICE) }), /isn't yours/);
+  assert.ok(!w.apps.submit(ALICE, combine({ actions: [{ key: profiles.profileKey(id), oldValue: CAROL, newValue: CAROL }] }, place(id, "2", "{}"))));
 });
 
 test("a profile offered to an account is taken by it for nothing; a price of 0 owes nothing", async () => {

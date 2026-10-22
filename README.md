@@ -80,12 +80,11 @@ await people.profilesOf(address);                // an account's profiles here
 img.src = await people.photo(p.avatar);          // an object URL, or null
 people.label(p);                                 // name, else @handle, else the end of the id
 
-await people.setAdmin(id, otherAccount, true, { wallet }); // may write as the profile
 await people.sell(id, 700n, { wallet });         // unlist, offer(id, account), buy(id)
 ```
 
-A sale moves the profile with its card and records; the admins its last
-owner named stop acting for it at once.
+A sale moves the profile with its card and records; from then on only its
+new owner writes as it.
 
 ### Showing a handle
 
@@ -104,10 +103,9 @@ await people.stopHandle(id, { wallet });
 ### Writing as a profile
 
 Records your app writes as a profile are keyed by it (`user/<p>/...`,
-`index/<topic>/<p>`), and must follow a proof that the signer acts for it:
-`profile/<p>` rewritten unchanged, and for an admin their
-`about/<p>/admin/<account>` too. `writeAs` puts it first and sends to your
-chain:
+`index/<topic>/<p>`), written by its owner, and must follow a proof that
+the signer owns it: `profile/<p>` rewritten unchanged. `writeAs` puts it
+first and sends to your chain:
 
 ```js
 await people.writeAs(id, { actions: [{ key: `user/${id}/review/42`, newValue: JSON.stringify(review) }] }, { wallet });

@@ -5,29 +5,27 @@
 //
 // An account owns profiles, the public identities an app shows, and sells or
 // gives them whole. A record the app writes is keyed by the profile it is
-// from, and written by its owner or an admin.
+// from, and written by its owner.
 //
 // Keys:
 //   profile/<p>                <owner>, <owner>@<price> or <owner>><account> (offered to it); never deleted
 //   owns/<a>/<p>               1 while <a> owns <p>
-//   about/<p>/admin/<a>        the owner who named <a> an admin; <a> acts only while that account owns <p>
 //   about/<p>/card             JSON { name, description, avatar, header, url, links }
 //   about/<p>/name             the handle the profile shows, while the name on Moniker points back here
 //   about/<p>/<field>          the app's other fields
 //
 // A transaction acting for a profile writes `profile/<p>`, unchanged if
-// nothing moves, which proves its owner; an admin also rewrites their
-// `about/<p>/admin/<a>` unchanged. Then come the profile's records, while it
+// nothing moves, which proves its owner, who signs. Then come the profile's
+// records, while it
 // is the last profile written: `about/<p>/...`, and the app's records keyed
 // by it (`user/<p>/...`, `index/.../<p>`). `proof` gives those first actions.
-import { change, checkedTerms, combine, heldToken, isAddress, isHandle, isProfileId, newProfileId, paymentFor, takeable, tokenValue, unchanged, write } from "./shared.mjs";
+import { change, checkedTerms, combine, heldToken, isHandle, isProfileId, newProfileId, paymentFor, takeable, tokenValue, unchanged, write } from "./shared.mjs";
 
 /** The card's text fields every app shows. A card may carry others; they are kept. */
 export const CARD_FIELDS = ["name", "description", "avatar", "header", "url"];
 
 export const profileKey = (p) => `profile/${p}`;
 export const ownsKey = (account, p) => `owns/${account}/${p}`;
-export const adminKey = (p, account) => `about/${p}/admin/${account}`;
 export const cardKey = (p) => `about/${p}/card`;
 export const shownKey = (p) => `about/${p}/name`;
 
@@ -107,38 +105,20 @@ export async function profilesOf(state, account) {
   return found;
 }
 
-/** The accounts acting as admins of profile `p` now: those its current owner named. */
-export async function adminsOf(state, p) {
-  const token = await profileToken(state, p);
-  if (!token) return [];
-  const prefix = `about/${p}/admin/`;
-  const found = [];
-  for await (const [key, value] of state.list(prefix)) {
-    const account = key.slice(prefix.length);
-    if (value === token.owner && isAddress(account)) found.push(account);
-  }
-  return found;
-}
-
-/** Whether `account` may act as profile `p` now: its owner, or an admin its owner named. */
+/** Whether `account` may act as profile `p` now: its owner. */
 export async function actsFor(state, account, p) {
-  const token = await profileToken(state, p);
-  return token !== undefined && (token.owner === account || (await state.get(adminKey(p, account))) === token.owner);
+  return (await profileToken(state, p))?.owner === account;
 }
 
 // Writing.
 
 /**
  * The actions that must come before records `account` writes as profile `p`:
- * the profile rewritten unchanged, and, for an admin, their admin key
- * rewritten unchanged. Throws if `account` doesn't act for `p`.
+ * the profile rewritten unchanged. Throws unless `account` owns `p`.
  */
 export async function proof(state, p, account) {
-  const token = await profileToken(state, p);
-  if (!token) throw new Error("No such profile");
-  if (token.owner === account) return [unchanged(profileKey(p), token.value)];
-  if ((await state.get(adminKey(p, account))) === token.owner) return [unchanged(profileKey(p), token.value), unchanged(adminKey(p, account), token.owner)];
-  throw new Error("You don't act for that profile");
+  const token = await owned(state, account, p);
+  return [unchanged(profileKey(p), token.value)];
 }
 
 /** `write`, as profile `p`, by `account`: the proof first, then the write. */
@@ -191,7 +171,7 @@ export async function createProfile(state, account, { card } = {}) {
 }
 
 /**
- * A change to profile `p`'s card by `account`, its owner or an admin: each of
+ * A change to profile `p`'s card by `account`, its owner: each of
  * `changes` sets a field, or removes it when undefined, null, "" or an empty
  * `links`. Text fields are strings; `links` is `[{ label, url }]` with web
  * addresses. Fields the client does not know are kept. An empty card is
@@ -238,16 +218,6 @@ export async function setShown(state, account, p, handle) {
   return write([...before, change(shownKey(p), old, handle)]);
 }
 
-/** Its owner names `admin` an admin of profile `p`, or stops (`on` false). */
-export async function setAdmin(state, account, p, admin, on = true) {
-  const token = await owned(state, account, p);
-  if (!isAddress(admin)) throw new Error(`not an address: ${admin}`);
-  const old = await state.get(adminKey(p, admin));
-  const next = on ? account : undefined;
-  if (old === next) return write([]);
-  return write([unchanged(profileKey(p), token.value), change(adminKey(p, admin), old, next)]);
-}
-
 /** Profile `p`, which `account` owns, set for sale at `price`, offered to account `offer`, or kept (neither). */
 export async function setProfileTerms(state, account, p, terms = {}) {
   checkedTerms(terms);
@@ -257,8 +227,7 @@ export async function setProfileTerms(state, account, p, terms = {}) {
 
 /**
  * `account` takes profile `p`, with its card and records: bought at its
- * price, paid to its owner, or taken as offered to `account`. The admins the
- * last owner named stop acting for it.
+ * price, paid to its owner, or taken as offered to `account`.
  */
 export async function takeProfile(state, account, p) {
   const token = await profileToken(state, p);
