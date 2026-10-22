@@ -411,16 +411,16 @@ export async function setAdmin(state, account, p, admin, on = true) {
 
 /**
  * `account` claims the free `handle`, for sale at `price` or not, pointed at
- * profile `point` if given.
+ * profile `point` if given (null: nowhere).
  */
 export async function claim(state, account, handle, { price, point } = {}) {
   if (!isHandle(handle)) throw new Error(`${handle}: a handle is lowercase letters, digits and _`);
   if ((await state.get(nameKey(handle))) !== undefined) throw new Error(`@${handle} is taken`);
-  if (point !== undefined && !isProfileId(point)) throw new Error(`not a profile: ${point}`);
+  if (point != null && !isProfileId(point)) throw new Error(`not a profile: ${point}`);
   return write([
     change(nameKey(handle), undefined, tokenValue(account, { price })),
     change(namesKey(account, handle), undefined, "1"),
-    ...(point !== undefined ? [change(pointsKey(handle), await state.get(pointsKey(handle)), point)] : []),
+    ...(point != null ? [change(pointsKey(handle), await state.get(pointsKey(handle)), point)] : []),
   ]);
 }
 
@@ -463,21 +463,22 @@ export async function offerName(state, account, handle, to) {
 /**
  * `account` takes `handle`: bought at the price the chain holds, its owner
  * paid in the same transaction, or taken as offered to it. Pointed at
- * profile `point` if given; otherwise it keeps pointing where it did until
- * its new owner points it.
+ * profile `point` if given, or nowhere with null; otherwise it keeps
+ * pointing where it did until its new owner points it.
  */
 export async function buy(state, account, handle, { point } = {}) {
   const entry = await resolve(state, handle);
   if (!entry) throw new Error(`No one owns @${handle}`);
   if (entry.owner === account) throw new Error(`@${handle} is already yours`);
   if (entry.price === undefined && entry.offer !== account) throw new Error(`@${handle} is not for sale`);
-  if (point !== undefined && !isProfileId(point)) throw new Error(`not a profile: ${point}`);
+  if (point != null && !isProfileId(point)) throw new Error(`not a profile: ${point}`);
+  const next = point ?? undefined;
   return write(
     [
       change(nameKey(handle), entry.value, account),
       change(namesKey(entry.owner, handle), "1", undefined),
       change(namesKey(account, handle), undefined, "1"),
-      ...(point !== undefined && point !== entry.pointer ? [change(pointsKey(handle), entry.pointer, point)] : []),
+      ...(point !== undefined && next !== entry.pointer ? [change(pointsKey(handle), entry.pointer, next)] : []),
     ],
     entry.price > 0n ? [{ to: entry.owner, amount: entry.price }] : [],
   );
@@ -501,8 +502,9 @@ export async function setProfileTerms(state, account, p, terms = {}) {
 }
 
 /**
- * `account` takes profile `p`, with its card and names: bought at its price,
- * paid to its owner, or taken as offered to `account`.
+ * `account` takes profile `p`, with its card and followers (names stay with
+ * their owners): bought at its price, paid to its owner, or taken as offered
+ * to `account`.
  */
 export async function takeProfile(state, account, p) {
   const token = await profileToken(state, p);
