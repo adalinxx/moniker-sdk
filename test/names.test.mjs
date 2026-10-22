@@ -46,6 +46,18 @@ test("a bought name's pointer is cleared, unless the buyer sets one in the same 
   assert.equal(await w.moniker.pointer("mira"), ALICE);
 });
 
+test("owners reads each name's owner from name/ alone, in order", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 100 });
+  await w.moniker.claim("ann", { price: 5n }, { wallet: w.wallet(ALICE) });
+  await w.moniker.claim("ben", {}, { wallet: w.wallet(BOB) });
+  await w.moniker.offer("ben", ALICE, { wallet: w.wallet(BOB) });
+  assert.deepEqual(await w.moniker.owners(["@ben", "ann", "free", "Not-A-Handle"]), [BOB, ALICE, undefined, undefined]);
+  const read = [];
+  const spy = { get: async (key) => (read.push(key), w.names.state.get(key)), list: () => assert.fail("no listing") };
+  assert.deepEqual(await names.ownersOf(spy, ["ann", "ben"]), [ALICE, BOB]);
+  assert.deepEqual(read, ["name/ann", "name/ben"]);
+});
+
 test("a stale price or a name not for sale is refused, and the buyer pays nothing", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 1000 });
   await w.moniker.claim("rare", { price: 300n }, { wallet: w.wallet(ALICE) });

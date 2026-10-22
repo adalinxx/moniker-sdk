@@ -69,6 +69,9 @@ export async function pointer(state, handle) {
   return isAddress(value) ? value : undefined;
 }
 
+/** The owner of each of `handles`, in order, from one state: one read of `name/<h>` each; undefined when free. */
+export const ownersOf = (state, handles) => Promise.all(handles.map(async (handle) => (isHandle(handle) ? (await heldToken(state, nameKey(handle)))?.owner : undefined)));
+
 /** The handle `account` shows: the one it names, while that handle points at it; else undefined. */
 export async function handleOf(state, account) {
   const handle = await state.get(shownKey(account));

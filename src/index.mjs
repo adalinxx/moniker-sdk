@@ -47,6 +47,7 @@ export {
   handlesOf,
   label,
   MONIKER_POLICY,
+  ownersOf,
   pointer,
   pointName,
   release,

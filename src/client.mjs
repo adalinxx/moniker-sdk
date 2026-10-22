@@ -66,6 +66,8 @@ export function monikerClient(link, { app }) {
     name: async (handle) => names.resolve(await state(), bare(handle)),
     /** The names an account owns, as `name` returns them. */
     names: async (address) => names.namesOf(await state(), address),
+    /** The owner of each of `handles` (with or without the @), in order, from one state; undefined when free. */
+    owners: async (handles) => names.ownersOf(await state(), handles.map(bare)),
     /** The account `@handle` points at, or undefined. */
     pointer: async (handle) => names.pointer(await state(), bare(handle)),
     /** The handle an account shows: the one it names, while that handle points at it; else undefined. */

@@ -60,6 +60,7 @@ someone pointing a name at you shows nothing until you name it.
 await moniker.name("@alice");                     // { handle, owner, price?, offer?, pointer? }, or undefined
 await moniker.pointer("@alice");                  // the account it points at
 await moniker.names(address);                     // an account's names
+await moniker.owners(["alice", "@bob"]);          // each name's owner, in order, from one read (undefined when free)
 await moniker.forSale();                          // cheapest first
 
 await moniker.claim("@alice", { point: true }, { wallet });   // point: an address, or true for you
@@ -85,7 +86,7 @@ await window.lattice.openRequest(uri);            // from a click; or show `uri`
 
 The builders under the client are exported too, over any state view (the
 client's `state()`): `claim`, `pointName`, `buy`, `release`, `acquire`,
-`showName`, `stopShowing`, `resolve`, `pointer`, `handleOf`, `handlesOf`,
+`showName`, `stopShowing`, `resolve`, `ownersOf`, `pointer`, `handleOf`, `handlesOf`,
 `label`, `displayName`. Each write returns `{ actions, payments }`;
 `combine(...writes)` joins them into one transaction the way the policy reads
 it: each key changes once, where it first comes, an unchanged rewrite giving
