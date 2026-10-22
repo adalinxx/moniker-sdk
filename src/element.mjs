@@ -1,10 +1,10 @@
-// <moniker-name address="bafyrei…"> for any page: the account's photo, name
-// and @handle, linked to its Moniker page. Register it once with a Moniker
-// from createMoniker:
+// <moniker-name profile="…"> for any page: a profile's photo, name and
+// @handle, linked to its Moniker page. Register it once with a Moniker from
+// createMoniker:
 //
 //   defineMonikerName(moniker);
-//   <moniker-name address="bafyrei…"></moniker-name>
-//   <moniker-name address="bafyrei…" size="24" plain></moniker-name>   (no link)
+//   <moniker-name profile="abcdefghijklmnop"></moniker-name>
+//   <moniker-name profile="abcdefghijklmnop" size="24" plain></moniker-name>   (no link)
 //
 // Style it from outside with CSS custom properties: --moniker-ink,
 // --moniker-muted, --moniker-accent, --moniker-avatar (the photo's backdrop).
@@ -22,21 +22,21 @@ const style = `
 export function defineMonikerName(moniker, tag = "moniker-name") {
   if (customElements.get(tag)) return;
 
-  // One read for every element drawn together: addresses gathered in a tick.
-  let waiting = new Map(); // address → [resolve]
+  // One read for every element drawn together: ids gathered in a tick.
+  let waiting = new Map(); // profile id → [resolve]
   let scheduled = false;
-  function profileOf(address) {
+  function profileOf(id) {
     return new Promise((resolve) => {
-      waiting.set(address, [...(waiting.get(address) ?? []), resolve]);
+      waiting.set(id, [...(waiting.get(id) ?? []), resolve]);
       if (scheduled) return;
       scheduled = true;
       queueMicrotask(async () => {
         const batch = waiting;
         waiting = new Map();
         scheduled = false;
-        const addresses = [...batch.keys()];
-        const found = await moniker.profiles(addresses).catch(() => addresses.map((a) => ({ address: a })));
-        addresses.forEach((a, i) => batch.get(a).forEach((done) => done(found[i])));
+        const ids = [...batch.keys()];
+        const found = await moniker.profiles(ids).catch(() => ids.map((id) => ({ id })));
+        ids.forEach((id, i) => batch.get(id).forEach((done) => done(found[i])));
       });
     });
   }
@@ -44,7 +44,7 @@ export function defineMonikerName(moniker, tag = "moniker-name") {
   customElements.define(
     tag,
     class extends HTMLElement {
-      static observedAttributes = ["address", "size", "plain"];
+      static observedAttributes = ["profile", "size", "plain"];
       #drawn = 0;
       constructor() {
         super();
@@ -58,17 +58,17 @@ export function defineMonikerName(moniker, tag = "moniker-name") {
       }
       async #draw() {
         const ticket = ++this.#drawn;
-        const address = this.getAttribute("address") ?? "";
+        const id = this.getAttribute("profile") ?? "";
         const size = Number(this.getAttribute("size")) || 28;
         const root = this.shadowRoot;
         root.replaceChildren(Object.assign(document.createElement("style"), { textContent: style }));
-        if (!moniker.chain || !address) return;
-        const p = await profileOf(address);
+        if (!moniker.chain || !id) return;
+        const p = await profileOf(id);
         if (ticket !== this.#drawn) return;
 
         const outer = this.hasAttribute("plain")
           ? document.createElement("span")
-          : Object.assign(document.createElement("a"), { href: moniker.pageURL(address), target: "_blank", rel: "noopener" });
+          : Object.assign(document.createElement("a"), { href: moniker.pageURL(p.handle ? `@${p.handle}` : id), target: "_blank", rel: "noopener" });
         const photo = document.createElement("span");
         photo.className = "photo";
         photo.style.cssText = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`;

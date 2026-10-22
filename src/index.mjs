@@ -1,12 +1,15 @@
-// Moniker for other apps: read anyone's profile and handle, and let the
-// person edit their own and trade handles through their Lattice Wallet.
+// Moniker for other apps. An account is a key; it owns profiles, the public
+// identity apps show (a card: name, photo, words, links), and @names, which
+// it may sell and point at any profile. A profile shows a default name while
+// that name points at it. A record an app writes says which profile it is from.
 //
-//   const moniker = createMoniker({ sdk });           // sdk: the Lattice SDK module
-//   const p = await moniker.profile(address);         // { address, name?, handle?, … }
-//   const ps = await moniker.profiles([a, b, c]);      // for a feed, in order
-//   const address = await moniker.resolve("@alice");   // or undefined
-//   img.src = await moniker.photo(p.avatar);           // an object URL, or null
-//   await moniker.save({ name: "Alice" }, { wallet: window.lattice });
+//   const moniker = createMoniker({ sdk });             // sdk: the Lattice SDK module
+//   const p = await moniker.profile(id);                 // { id, owner, handle?, name?, avatar?, … }
+//   const ps = await moniker.profiles([a, b, c]);         // for a feed, in order
+//   const q = await moniker.profileOf("@alice");          // the profile a name points at, or undefined
+//   const mine = await moniker.profilesOf(address);       // an account's profiles
+//   img.src = await moniker.photo(p.avatar);              // an object URL, or null
+//   await moniker.save(p.id, { name: "Alice" }, { wallet: window.lattice });
 //
 // Reads go to the first of `nodes` that answers and are checked by CID, so
 // they do not depend on trusting that node. Writes go to the wallet, which
@@ -17,7 +20,7 @@ import { writeRequest, writeRequestURI } from "./records/wallet.mjs";
 
 /** Where Moniker lives now: the testnet trial chain and its shared hosts. */
 export const DEFAULTS = {
-  chain: ["Nexus", "testnet", "moniker-da6f57"],
+  chain: ["Nexus", "testnet", "moniker-01c01f"],
   nodes: ["https://lattice-testnet-apps-iad.fly.dev", "https://lattice-testnet-apps-ams.fly.dev"],
   app: "https://adalinxx.github.io/moniker/app/",
   // The trial chain's hosts admit 0-fee transactions: writes are free.
@@ -84,11 +87,8 @@ export function createMoniker(options) {
   };
   const send = (wallet) => (write) => needWallet(wallet).writeRecords(writeRequest(chain, write, fee));
   const me = async (wallet) => (await needWallet(wallet).address?.()) ?? (await wallet.connect());
-  const entry = async (handle) => {
-    const found = await profileRecords.resolve(await state({ fresh: true }), String(handle).replace(/^@/, ""));
-    if (!found) throw new Error(`No one holds @${String(handle).replace(/^@/, "")}`);
-    return found;
-  };
+  const bare = (handle) => String(handle).replace(/^@/, "");
+  const fresh = () => state({ fresh: true });
 
   return {
     chain,
@@ -97,65 +97,87 @@ export function createMoniker(options) {
 
     // ---- reading
 
-    /** `address`'s profile: `{ address, name?, description?, avatar?, header?, url?, handle?, links? }`. */
-    profile: async (address) => profileRecords.getProfile(await state(), address),
-    /** Profiles for many addresses, in order, from one state. */
-    profiles: async (addresses) => profileRecords.getProfiles(await state(), addresses),
-    /** The address that holds `@handle` (with or without the @), or undefined. */
-    resolve: async (handle) => (await profileRecords.resolve(await state(), String(handle).replace(/^@/, "")))?.holder,
-    /** A field outside the card, such as `key.x25519` or `app.<name>.<field>`. */
+    /** Profile `id`: `{ id, owner, price?, offer?, handle?, name?, description?, avatar?, header?, url?, links? }`, or undefined. */
+    profile: async (id) => profileRecords.getProfile(await state(), id),
+    /** Profiles for many ids, in order, from one state; an unknown id gives `{ id }`. */
+    profiles: async (ids) => profileRecords.getProfiles(await state(), ids),
+    /** The profile `@handle` (with or without the @) points at, or undefined. */
+    profileOf: async (handle) => profileRecords.profileOf(await state(), bare(handle)),
+    /** The id of the profile `@handle` points at, or undefined. */
+    resolve: async (handle) => (await profileRecords.resolve(await state(), bare(handle)))?.profile,
+    /** A name as held: `{ handle, owner, price?, offer?, profile? }`, or undefined when free. */
+    name: async (handle) => profileRecords.resolve(await state(), bare(handle)),
+    /** The profiles an account owns. */
+    profilesOf: async (address) => profileRecords.profilesOf(await state(), address),
+    /** The names an account owns: `[{ handle, owner, price?, offer?, profile? }]`. */
+    names: async (address) => profileRecords.namesOf(await state(), address),
+    /** The accounts a profile names as admins. */
+    admins: async (id) => profileRecords.adminsOf(await state(), id),
+    /** Whether an account may act as a profile now: its owner or an admin. */
+    actsFor: async (address, id) => profileRecords.actsFor(await state(), address, id),
+    /** A field an account keeps outside its profiles, such as `key.x25519` or `app.<name>.<field>`. */
     field: async (address, name) => profileRecords.getField(await state(), address, name),
-    /** Handles for sale, cheapest first: `[{ handle, holder, price }]`. */
+    /** Names for sale, cheapest first: `[{ handle, owner, price, profile? }]`. */
     forSale: async () => profileRecords.forSale(await state()),
     photo,
-    /** A link to `address`'s Moniker page, or to `@handle`'s. */
+    /** A link to a profile's Moniker page: by `@handle`, or by profile id, which survives renames. */
     pageURL: (who) => `${app}#/${encodeURIComponent(who)}`,
-    /** What to show for an account in a byline: its name, else @handle, else a short address. */
-    label: (p) => p.name ?? (p.handle ? `@${p.handle}` : `${p.address.slice(0, 7)}…${p.address.slice(-5)}`),
+    /** What to show in a byline: the card's name, else its @handle, else the end of its id. */
+    label: (p) => p.name ?? (p.handle ? `@${p.handle}` : `Profile …${p.id.slice(-6)}`),
 
-    // ---- writing, through the person's wallet
+    // ---- writing, through the person's wallet, as the connected account
 
+    /** Makes a profile, with a `card`, and a `handle` (free, or yours) as its default name; resolves to `{ id, sent }`. */
+    createProfile: async ({ card, handle } = {}, { wallet }) => {
+      const { id, write } = await profileRecords.createProfile(await fresh(), await me(wallet), { card, handle: handle && bare(handle) });
+      return { id, sent: await send(wallet)(write) };
+    },
     /**
-     * Changes the connected account's card: each key of `changes` sets a
-     * field (`name`, `description`, `avatar`, `header`, `url`, `handle`,
-     * `links`, or one of your own) or removes it when undefined, null or "".
-     * Fields this library does not know are kept. Retried if another app
-     * saved the card meanwhile. Resolves to the wallet's answer, or undefined
-     * when nothing changed.
+     * Changes a profile's card: each key of `changes` sets a field (`name`,
+     * `description`, `avatar`, `header`, `url`, `links`, or one of your own)
+     * or removes it when undefined, null or "". Fields this library does not
+     * know are kept. Retried if another app saved the card meanwhile.
+     * Resolves to the wallet's answer, or undefined when nothing changed.
      */
-    save: async (changes, { wallet }) =>
-      profileRecords.saveCard(() => state({ fresh: true }), await me(wallet), changes, send(wallet)),
-    /** Sets a field outside the card for the connected account, or removes it with undefined. */
-    setField: async (name, value, { wallet }) =>
-      send(wallet)(await profileRecords.setField(await state({ fresh: true }), await me(wallet), name, value)),
-    /** Claims a free handle for the connected account. */
-    claim: async (handle, { wallet }) =>
-      send(wallet)(await profileRecords.claim(await state({ fresh: true }), await me(wallet), String(handle).replace(/^@/, ""))),
-    /** Puts a handle the connected account holds up for sale: anyone may then buy it at `price` at once. */
-    sell: async (handle, price, { wallet }) => send(wallet)(profileRecords.list(await entry(handle), BigInt(price))),
-    /** Takes a handle off sale. */
-    unlist: async (handle, { wallet }) => send(wallet)(profileRecords.unlist(await entry(handle))),
+    save: async (id, changes, { wallet }) => profileRecords.saveCard(fresh, await me(wallet), id, changes, send(wallet)),
+    /** The profile shows `@handle` as its default name: one that points at it. */
+    showName: async (id, handle, { wallet }) => send(wallet)(await profileRecords.showName(await fresh(), await me(wallet), id, bare(handle))),
+    /** Makes an account an admin of the profile, or stops (`on` false). */
+    setAdmin: async (id, address, on, { wallet }) => send(wallet)(await profileRecords.setAdmin(await fresh(), await me(wallet), id, address, on)),
+    /** Sets a field outside the profiles for the connected account, or removes it with undefined. */
+    setField: async (name, value, { wallet }) => send(wallet)(await profileRecords.setField(await fresh(), await me(wallet), name, value)),
+    /** Claims a free `@handle`, pointed at profile `point` if given. */
+    claim: async (handle, { point } = {}, { wallet }) => send(wallet)(await profileRecords.claim(await fresh(), await me(wallet), bare(handle), { point })),
+    /** Points a name of yours at any profile, or nowhere (undefined). */
+    point: async (handle, id, { wallet }) => send(wallet)(await profileRecords.pointName(await fresh(), await me(wallet), bare(handle), id)),
+    /** Puts a name up for sale: anyone may then buy it at `price` at once. */
+    sell: async (handle, price, { wallet }) => send(wallet)(await profileRecords.list(await fresh(), await me(wallet), bare(handle), BigInt(price))),
+    /** Takes a name off sale, or back from an offer. */
+    unlist: async (handle, { wallet }) => send(wallet)(await profileRecords.unlist(await fresh(), await me(wallet), bare(handle))),
+    /** Offers a name to another account, which may take it for nothing. */
+    offer: async (handle, address, { wallet }) => send(wallet)(await profileRecords.offerName(await fresh(), await me(wallet), bare(handle), address)),
     /**
-     * A lattice://write request that claims `handle`, or buys it at the price
-     * the chain holds now, for whichever account signs it: no wallet or
-     * address needed here. Hand it to `window.lattice.openRequest` from a
-     * click, or show it as a QR code or text. The account's page shows the
-     * handle too, if it had none.
+     * A lattice://write request that claims `@handle`, or buys it at the
+     * price the chain holds now, for whichever account signs it: no wallet
+     * or address needed here. Hand it to `window.lattice.openRequest` from a
+     * click, or show it as a QR code or text. The new owner points it later.
      */
     buyRequest: async (handle) => {
-      const name = String(handle).replace(/^@/, "");
-      const entry = await profileRecords.resolve(await state({ fresh: true }), name);
+      const name = bare(handle);
+      const entry = await profileRecords.resolve(await fresh(), name);
       // Wallets show at most 64 characters of a label: a longer one goes unlabeled.
       const label = `Buy @${name}`.length <= 64 ? `Buy @${name}` : undefined;
       return writeRequestURI(chain, profileRecords.acquire(name, entry), { fee, label });
     },
-    /** Buys a handle at the price the chain holds now; the holder is paid in the same transaction. */
-    buy: async (handle, { wallet }) => send(wallet)(profileRecords.buy(await entry(handle), await me(wallet))),
-    /** Gives a handle to `address`. */
-    give: async (handle, address, { wallet }) => send(wallet)(profileRecords.transfer(await entry(handle), address)),
-    /** Gives a handle up; anyone may claim it next. */
-    release: async (handle, { wallet }) => send(wallet)(profileRecords.release(await entry(handle))),
+    /** Buys a name at the price the chain holds, or takes it as offered; pointed at profile `point` if given. */
+    buy: async (handle, { point } = {}, { wallet }) => send(wallet)(await profileRecords.buy(await fresh(), await me(wallet), bare(handle), { point })),
+    /** Gives a name up; anyone may claim it next. */
+    release: async (handle, { wallet }) => send(wallet)(await profileRecords.release(await fresh(), await me(wallet), bare(handle))),
+    /** Sets a profile's terms: for sale at `price`, offered to account `offer`, or kept (neither). */
+    sellProfile: async (id, terms, { wallet }) => send(wallet)(await profileRecords.setProfileTerms(await fresh(), await me(wallet), id, terms)),
+    /** Takes a profile, with its card and followers (names stay with their owners): bought at its price, or as offered to you. */
+    takeProfile: async (id, { wallet }) => send(wallet)(await profileRecords.takeProfile(await fresh(), await me(wallet), id)),
   };
 }
 
-export const { isAddress, isHandle, isWebURL } = profileRecords;
+export const { isAddress, isHandle, isProfileId, isWebURL } = profileRecords;

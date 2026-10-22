@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ACCOUNT, acquire, holdingValue } from "../src/records/profile.mjs";
+import { ACCOUNT, acquire, tokenValue } from "../src/records/profile.mjs";
 import { writeRequestURI } from "../src/records/wallet.mjs";
 
 const owner = "bafyreibc6ggvvnkjlyjghue3qxnagcoprbsh725cutnnnkt3t6dambbt6a";
@@ -11,20 +11,24 @@ const intent = (uri) => {
   return JSON.parse(Buffer.from(url.searchParams.get("intent"), "base64url").toString("utf8"));
 };
 
-test("a free handle is claimed for whichever account signs, and goes on its page if it has none", () => {
+test("a free name is claimed for whichever account signs, with its names/ key", () => {
   assert.deepEqual(acquire("rae"), {
     actions: [
       { key: "name/rae", newValue: ACCOUNT },
-      { key: `user/${ACCOUNT}/profile`, newValue: '{"handle":"rae"}', ifAbsent: true },
+      { key: `names/${ACCOUNT}/rae`, newValue: "1" },
     ],
     payments: [],
   });
 });
 
-test("a listed handle is bought at the price read, paid to its holder", () => {
-  const entry = { handle: "rae", value: holdingValue(owner, 500n), holder: owner, price: 500n };
+test("a listed name is bought at the price read, paid to its owner", () => {
+  const entry = { handle: "rae", value: tokenValue(owner, { price: 500n }), owner, price: 500n };
   const { actions, payments } = acquire("rae", entry);
-  assert.deepEqual(actions[0], { key: "name/rae", oldValue: `${owner}@500`, newValue: ACCOUNT });
+  assert.deepEqual(actions, [
+    { key: "name/rae", oldValue: `${owner}@500`, newValue: ACCOUNT },
+    { key: `names/${owner}/rae`, oldValue: "1" },
+    { key: `names/${ACCOUNT}/rae`, newValue: "1" },
+  ]);
   assert.deepEqual(payments, [{ to: owner, amount: 500n }]);
   assert.throws(() => acquire("rae", { ...entry, price: undefined }), /not for sale/);
   assert.throws(() => acquire("Rae"), /lowercase/);
@@ -32,7 +36,7 @@ test("a listed handle is bought at the price read, paid to its holder", () => {
 
 test("a write becomes a lattice://write request: no address, no nonce, an expiry and a label", () => {
   const expiresAt = new Date("2030-01-01T00:00:00.000Z");
-  const entry = { handle: "rae", value: holdingValue(owner, 500n), holder: owner, price: 500n };
+  const entry = { handle: "rae", value: tokenValue(owner, { price: 500n }), owner, price: 500n };
   const uri = writeRequestURI(["Nexus", "moniker"], acquire("rae", entry), { fee: 0n, label: "Buy @rae", expiresAt });
   assert.match(uri, /^lattice:\/\/write\?v=1&intent=[A-Za-z0-9_-]+$/, "base64url, unpadded");
   assert.deepEqual(intent(uri), {
