@@ -15,24 +15,24 @@
 <body>
 <main>
   <h1>Moniker in your app</h1>
-  <p>A byline from Moniker, as a feed would show it:</p>
+  <p>A byline for a profile on an app's chain, its handle checked against Moniker:</p>
   <div class="post" id="post"><p>Hello from a post.</p></div>
   <p>The code:</p>
-  <pre>import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.1.2/src/browser.mjs";
+  <pre>import { createMoniker, createProfiles, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.2.0/src/browser.mjs";
 const moniker = createMoniker();
-defineMonikerName(moniker);
+const people = createProfiles({ chain: ["Nexus", "testnet", "rave-186079"], moniker });
+defineMonikerName(people);
 // &lt;moniker-name profile="…"&gt;&lt;/moniker-name&gt;</pre>
 </main>
 <script type="module">
-  import { createMoniker, defineMonikerName } from "./src/browser.mjs";
-  // ?profile=…&node=…&chain=… for trying it against another chain.
+  import { createMoniker, createProfiles, defineMonikerName } from "./src/browser.mjs";
+  // ?app=<chain path>, ?profile=… or ?handle=…, and ?node=… for trying other chains and hosts.
   const query = new URLSearchParams(location.search);
-  const moniker = createMoniker({
-    ...(query.get("node") && { nodes: [query.get("node")] }),
-    ...(query.get("chain") && { chain: query.get("chain").split("/") }),
-  });
-  defineMonikerName(moniker);
-  const id = query.get("profile") ?? (await moniker.resolve("moniker"));
+  const nodes = query.get("node") ? { nodes: [query.get("node")] } : {};
+  const moniker = createMoniker(nodes);
+  const people = createProfiles({ ...nodes, chain: (query.get("app") ?? "Nexus/testnet/rave-186079").split("/"), moniker });
+  defineMonikerName(people);
+  const id = query.get("profile") ?? (await people.profileOf(query.get("handle") ?? "moniker").catch(() => undefined))?.id;
   const byline = document.createElement("moniker-name");
   byline.setAttribute("profile", id ?? "");
   document.getElementById("post").prepend(byline);

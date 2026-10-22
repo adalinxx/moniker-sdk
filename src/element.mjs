@@ -1,8 +1,8 @@
 // <moniker-name profile="…"> for any page: a profile's photo, name and
-// @handle, linked to its Moniker page. Register it once with a Moniker from
-// createMoniker:
+// @handle, the handle linked to its Moniker page. Register it once with an
+// app's profiles from createProfiles:
 //
-//   defineMonikerName(moniker);
+//   defineMonikerName(profiles);
 //   <moniker-name profile="abcdefghijklmnop"></moniker-name>
 //   <moniker-name profile="abcdefghijklmnop" size="24" plain></moniker-name>   (no link)
 //
@@ -19,7 +19,7 @@ const style = `
   .handle { color: var(--moniker-accent, #1f3fbf); font-family: ui-monospace, monospace; font-size: 0.9em; white-space: nowrap; }
 `;
 
-export function defineMonikerName(moniker, tag = "moniker-name") {
+export function defineMonikerName(profiles, tag = "moniker-name") {
   if (customElements.get(tag)) return;
 
   // One read for every element drawn together: ids gathered in a tick.
@@ -35,7 +35,7 @@ export function defineMonikerName(moniker, tag = "moniker-name") {
         waiting = new Map();
         scheduled = false;
         const ids = [...batch.keys()];
-        const found = await moniker.profiles(ids).catch(() => ids.map((id) => ({ id })));
+        const found = await profiles.profiles(ids).catch(() => ids.map((id) => ({ id })));
         ids.forEach((id, i) => batch.get(id).forEach((done) => done(found[i])));
       });
     });
@@ -62,24 +62,25 @@ export function defineMonikerName(moniker, tag = "moniker-name") {
         const size = Number(this.getAttribute("size")) || 28;
         const root = this.shadowRoot;
         root.replaceChildren(Object.assign(document.createElement("style"), { textContent: style }));
-        if (!moniker.chain || !id) return;
+        if (!profiles.chain || !id) return;
         const p = await profileOf(id);
         if (ticket !== this.#drawn) return;
 
-        const outer = this.hasAttribute("plain")
+        // Only a handle has a page: profiles live on the app's own chain.
+        const outer = this.hasAttribute("plain") || !p.handle
           ? document.createElement("span")
-          : Object.assign(document.createElement("a"), { href: moniker.pageURL(p.handle ? `@${p.handle}` : id), target: "_blank", rel: "noopener" });
+          : Object.assign(document.createElement("a"), { href: profiles.moniker.pageURL(`@${p.handle}`), target: "_blank", rel: "noopener" });
         const photo = document.createElement("span");
         photo.className = "photo";
         photo.style.cssText = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`;
         photo.textContent = (p.name?.trim()?.[0] ?? p.handle?.[0] ?? "?").toUpperCase();
         photo.setAttribute("aria-hidden", "true");
-        const name = Object.assign(document.createElement("span"), { className: "name", textContent: moniker.label(p) });
+        const name = Object.assign(document.createElement("span"), { className: "name", textContent: profiles.label(p) });
         outer.append(photo, name);
         if (p.handle && p.name) outer.append(Object.assign(document.createElement("span"), { className: "handle", textContent: `@${p.handle}` }));
         root.append(outer);
 
-        const url = await moniker.photo(p.avatar);
+        const url = await profiles.photo(p.avatar);
         if (url && ticket === this.#drawn) {
           const img = Object.assign(document.createElement("img"), { className: "photo", src: url, alt: "" });
           img.style.cssText = `width:${size}px;height:${size}px`;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ACCOUNT, acquire, tokenValue } from "../src/records/profile.mjs";
+import { acquire } from "../src/records/names.mjs";
+import { ACCOUNT, tokenValue } from "../src/records/shared.mjs";
 import { writeRequestURI } from "../src/records/wallet.mjs";
 
 const owner = "bafyreibc6ggvvnkjlyjghue3qxnagcoprbsh725cutnnnkt3t6dambbt6a";
