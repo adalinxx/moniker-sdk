@@ -16,7 +16,7 @@
 // shows them to the person and signs; this library never holds a key.
 import * as profileRecords from "./records/profile.mjs";
 import { anyHost, tip, view, volumeLoader } from "./records/state.mjs";
-import { writeRequest } from "./records/wallet.mjs";
+import { writeRequest, writeRequestURI } from "./records/wallet.mjs";
 
 /** Where Moniker lives now: the testnet trial chain and its shared hosts. */
 export const DEFAULTS = {
@@ -156,6 +156,19 @@ export function createMoniker(options) {
     unlist: async (handle, { wallet }) => send(wallet)(await profileRecords.unlist(await fresh(), await me(wallet), bare(handle))),
     /** Offers a name to another account, which may take it for nothing. */
     offer: async (handle, address, { wallet }) => send(wallet)(await profileRecords.offerName(await fresh(), await me(wallet), bare(handle), address)),
+    /**
+     * A lattice://write request that claims `@handle`, or buys it at the
+     * price the chain holds now, for whichever account signs it: no wallet
+     * or address needed here. Hand it to `window.lattice.openRequest` from a
+     * click, or show it as a QR code or text. The new owner points it later.
+     */
+    buyRequest: async (handle) => {
+      const name = bare(handle);
+      const entry = await profileRecords.resolve(await fresh(), name);
+      // Wallets show at most 64 characters of a label: a longer one goes unlabeled.
+      const label = `Buy @${name}`.length <= 64 ? `Buy @${name}` : undefined;
+      return writeRequestURI(chain, profileRecords.acquire(name, entry), { fee, label });
+    },
     /** Buys a name at the price the chain holds, or takes it as offered; pointed at profile `point` if given. */
     buy: async (handle, { point } = {}, { wallet }) => send(wallet)(await profileRecords.buy(await fresh(), await me(wallet), bare(handle), { point })),
     /** Gives a name up; anyone may claim it next. */

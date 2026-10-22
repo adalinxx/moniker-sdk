@@ -484,6 +484,28 @@ export async function buy(state, account, handle, { point } = {}) {
   );
 }
 
+/**
+ * Stands for the buyer in a lattice://write request (wallet.mjs
+ * `writeRequestURI`): the wallet fills in the account the person chooses.
+ */
+export const ACCOUNT = "{account}";
+
+/**
+ * `handle` taken by whichever account signs, with no address needed: claimed
+ * when `entry` (as `resolve` returns it) is undefined, else bought at its
+ * price. It keeps pointing where it did until its new owner points it. For
+ * `writeRequestURI`, not `send`.
+ */
+export function acquire(handle, entry) {
+  if (!isHandle(handle)) throw new Error(`${handle}: a handle is lowercase letters, digits and _`);
+  if (entry && entry.price === undefined) throw new Error(`@${handle} is not for sale`);
+  if (!entry) return write([change(nameKey(handle), undefined, ACCOUNT), change(namesKey(ACCOUNT, handle), undefined, "1")]);
+  return write(
+    [change(nameKey(handle), entry.value, ACCOUNT), change(namesKey(entry.owner, handle), "1", undefined), change(namesKey(ACCOUNT, handle), undefined, "1")],
+    entry.price > 0n ? [{ to: entry.owner, amount: entry.price }] : [],
+  );
+}
+
 /** Gives `handle` up, and its pointer; anyone may claim it next. */
 export async function release(state, account, handle) {
   const entry = await ownName(state, account, handle);
