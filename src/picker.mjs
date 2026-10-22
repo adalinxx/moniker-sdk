@@ -105,7 +105,6 @@ export function defineHandlePicker(moniker, { tag = "moniker-handle-picker", wal
       #cancel;
       #send;
       #account = null; // the account the names were listed for
-      #shownNow; // the handle that account shows now, as listed
       #asking = false; // the wallet has been asked, and not answered
       #opened = 0; // one per open(): a later one ends what an earlier one waits for
       #done = null; // resolves the open() under way
@@ -219,15 +218,18 @@ export function defineHandlePicker(moniker, { tag = "moniker-handle-picker", wal
         this.#account = account;
         let names = [];
         let shownNow;
+        let read = true;
         try {
           [names, shownNow] = await within(15_000, Promise.all([moniker.names(account), moniker.handleOf(account)]));
         } catch {
-          // None listed: a free one can still be claimed.
+          // Not listed: a name can still be typed, and is checked when sent.
+          read = false;
         }
         if (ticket !== this.#opened || !this.#dialog.open) return;
-        this.#shownNow = shownNow;
         if (names.length === 0) {
-          this.#names.replaceChildren(this.#note("You have no names on Moniker yet. Claim a free one below."));
+          this.#names.replaceChildren(this.#note(read
+            ? "You have no names on Moniker yet. Claim a free one below."
+            : "Couldn't list your names on Moniker. Type one of yours, or a free one, below."));
           this.#typed.focus();
           return;
         }

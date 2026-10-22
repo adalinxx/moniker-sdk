@@ -109,6 +109,31 @@ verified `@handle`, the handle linked to its Moniker page (`plain` drops the
 link); restyle it with `--moniker-ink`, `--moniker-muted`, `--moniker-accent`
 and `--moniker-avatar`. See [`demo.html`](demo.html).
 
+## The handle picker
+
+```js
+defineHandlePicker(moniker);   // <moniker-handle-picker></moniker-handle-picker>
+const handle = await document.querySelector("moniker-handle-picker").open();   // from a click
+```
+
+`<moniker-handle-picker>` lets someone choose the `@handle` they show in
+every app without leaving yours. Its dialog lists the names the account
+connected in Selfhold owns on Moniker, and offers to claim a free one: a free
+name is claimed, pointed at the account and shown in one transaction; a name
+the account owns, or one pointed at it, is shown. Someone else's name is
+refused before the wallet is asked, saying whether it is for sale. Writes go
+only from the account the names were listed for.
+
+`open()` resolves to the handle once Moniker shows it, about a block after the
+wallet sends it, or to `undefined` if the dialog is closed first. The element
+fires `moniker:sent` (`{ account, handle }`) when the wallet has sent it, so
+your page can show it as saving, and `moniker:shown` when Moniker shows it.
+Pass `defineHandlePicker(moniker, { tag, wallet, app })` to rename the tag,
+use another wallet than `window.lattice`, or link another Moniker app.
+Restyle it with `--moniker-ink`, `--moniker-muted`, `--moniker-accent`,
+`--moniker-accent-ink`, `--moniker-line`, `--moniker-surface` and
+`--moniker-bad`.
+
 Writes are free on the testnet trial: its nodes admit transactions with no
 fee. Pass `createMoniker({ fee })` for nodes that want one.
 
@@ -118,6 +143,7 @@ fee. Pass `createMoniker({ fee })` for nodes that want one.
 - `src/browser.mjs`: the same, bound to the vendored Lattice SDK.
 - `src/client.mjs`: the client, over a link to Moniker.
 - `src/element.mjs`: `<moniker-name>`.
+- `src/picker.mjs`: `<moniker-handle-picker>`.
 - `src/records/`: `names.mjs` (Moniker's records, as pure builders over a
   state view), `shared.mjs` (tokens, `combine`, checks), `state.mjs` (reads
   state by descending the trie, checked by CID), `wallet.mjs` (the request
