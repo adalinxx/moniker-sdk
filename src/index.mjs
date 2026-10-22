@@ -20,7 +20,7 @@ import { connect, monikerClient } from "./client.mjs";
 
 /** Where Moniker lives now: the testnet trial chain and its shared hosts. */
 export const DEFAULTS = {
-  chain: ["Nexus", "testnet", "moniker-01c01f"],
+  chain: ["Nexus", "testnet", "moniker-307b2c"],
   nodes: ["https://lattice-testnet-apps-iad.fly.dev", "https://lattice-testnet-apps-ams.fly.dev"],
   app: "https://adalinxx.github.io/moniker/app/",
   // The trial chain's hosts admit 0-fee transactions: writes are free.
