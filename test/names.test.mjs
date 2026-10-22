@@ -125,6 +125,24 @@ test("an account shows a handle only while it names it and the handle points at 
   assert.equal(await w.moniker.stopShowing({ wallet: w.wallet(BOB) }), undefined, "nothing to write");
 });
 
+test("claim and buy with show point the name at the signer and show it, in one transaction", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 1000 });
+  const claimed = await names.claim(w.names.state, ALICE, "ann", { price: 5n, show: true });
+  assert.deepEqual(claimed.actions.map((a) => a.key), ["name/ann", names.namesKey(ALICE, "ann"), "points/ann", names.shownKey(ALICE)]);
+  await w.moniker.claim("@ann", { price: 5n, show: true }, { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.handleOf(ALICE), "ann");
+  await assert.rejects(w.moniker.claim("other", { point: BOB, show: true }, { wallet: w.wallet(ALICE) }), /points at you/);
+  await w.moniker.claim("own", { point: ALICE, show: true }, { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.handleOf(ALICE), "own");
+  // Bob buys @ann and shows it at once; Alice stops showing it with the sale.
+  await w.moniker.sell("ann", 5n, { wallet: w.wallet(ALICE) });
+  await assert.rejects(w.moniker.buy("ann", { point: ALICE, show: true }, { wallet: w.wallet(BOB) }), /points at you/);
+  await w.moniker.buy("ann", { show: true }, { wallet: w.wallet(BOB) });
+  assert.deepEqual(await w.moniker.handlesOf([ALICE, BOB]), ["own", "ann"]);
+  await w.moniker.release("own", { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.handleOf(ALICE), undefined);
+});
+
 test("labels: a card name never passes for a handle; the verified handle sits beside it", async () => {
   const w = world({ [ALICE]: 100 });
   await w.moniker.claim("dana", { point: true }, { wallet: w.wallet(ALICE) });

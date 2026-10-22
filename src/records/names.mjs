@@ -147,19 +147,31 @@ const repoint = (handle, old, to) => (old === (to ?? undefined) ? [] : [change(p
 /** `point` as an account, `true` standing for `account`. */
 const target = (point, account) => (point === true ? account : point == null ? point : checkedAccount(point));
 
+/** `point` for a write that `show`s the handle too: it must point at `account`. */
+function showing(point, account, show) {
+  if (!show) return point;
+  if (point != null && point !== true && point !== account) throw new Error("a handle you show points at you");
+  return true;
+}
+
+/** `account` names `handle` as the one it shows, after `w`, when `show`. */
+const andShow = async (state, account, handle, w, show) => (show ? combine(w, await setField(state, account, "name", handle)) : w);
+
 /**
  * `account` claims the free `handle`, for sale at `price` or not, pointed at
- * account `point` if given (`true`: itself).
+ * account `point` if given (`true`: itself); with `show`, pointed at itself
+ * and shown as its handle, in the same transaction.
  */
-export async function claim(state, account, handle, { price, point } = {}) {
+export async function claim(state, account, handle, { price, point, show = false } = {}) {
   checkedHandle(handle);
   if ((await state.get(nameKey(handle))) !== undefined) throw new Error(`@${handle} is taken`);
-  const to = target(point, account);
-  return write([
+  const to = target(showing(point, account, show), account);
+  const claimed = write([
     change(nameKey(handle), undefined, tokenValue(account, { price })),
     change(namesKey(account, handle), undefined, "1"),
     ...(to != null ? repoint(handle, await state.get(pointsKey(handle)), to) : []),
   ]);
+  return andShow(state, account, handle, claimed, show);
 }
 
 /** Points `handle`, which `account` owns, at account `to` (`true`: itself), or nowhere when null. */
@@ -193,13 +205,15 @@ export async function offerName(state, account, handle, to) {
  * `account` takes `handle`: bought at the price the chain holds, its owner
  * paid in the same transaction, or taken as offered to it. Its pointer is
  * cleared, so no one keeps showing it, unless `point` sets a new one
- * (an account, or `true` for the buyer).
+ * (an account, or `true` for the buyer); with `show`, pointed at the buyer
+ * and shown as its handle, in the same transaction.
  */
-export async function buy(state, account, handle, { point = null } = {}) {
+export async function buy(state, account, handle, { point = null, show = false } = {}) {
   const entry = await resolve(state, checkedHandle(handle));
   if (!entry) throw new Error(`No one owns @${handle}`);
   takeable(entry, account, `@${handle}`);
-  return write(
+  point = showing(point, account, show);
+  const bought = write(
     [
       change(nameKey(handle), entry.value, account),
       change(namesKey(entry.owner, handle), "1", undefined),
@@ -208,6 +222,7 @@ export async function buy(state, account, handle, { point = null } = {}) {
     ],
     paymentFor(entry),
   );
+  return andShow(state, account, handle, bought, show);
 }
 
 /**

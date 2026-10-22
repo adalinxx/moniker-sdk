@@ -64,6 +64,7 @@ await moniker.owners(["alice", "@bob"]);          // each name's owner, in order
 await moniker.forSale();                          // cheapest first
 
 await moniker.claim("@alice", { point: true }, { wallet });   // point: an address, or true for you
+await moniker.claim("@alice", { show: true }, { wallet });    // claimed, pointed at you and shown, in one transaction (buy takes show too)
 await moniker.point("@alice", otherAccount, { wallet });      // or null: nowhere
 await moniker.sell("@alice", 500n, { wallet });               // unlist, offer(handle, account)
 await moniker.buy("@alice", { point: true }, { wallet });     // the pointer is cleared unless you set one

@@ -89,8 +89,9 @@ export function monikerClient(link, { app }) {
 
     // ---- writing, through the person's wallet, as the connected account
 
-    /** Claims a free `@handle`, for sale at `price` if given, pointed at account `point` if given (`true`: you). */
-    claim: (handle, { price, point } = {}, { wallet }) => act(wallet, (s, a) => names.claim(s, a, bare(handle), { price: price === undefined ? undefined : BigInt(price), point })),
+    /** Claims a free `@handle`, for sale at `price` if given, pointed at account `point` if given (`true`: you); `show`: pointed at you and shown as yours, in one transaction. */
+    claim: (handle, { price, point, show } = {}, { wallet }) =>
+      act(wallet, (s, a) => names.claim(s, a, bare(handle), { price: price === undefined ? undefined : BigInt(price), point, show })),
     /** Points a name of yours at an account (`true`: you), or nowhere (null). */
     point: (handle, address, { wallet }) => act(wallet, (s, a) => names.pointName(s, a, bare(handle), address)),
     /** Puts a name up for sale: anyone may then buy it at `price` at once. */
@@ -99,8 +100,8 @@ export function monikerClient(link, { app }) {
     unlist: (handle, { wallet }) => act(wallet, (s, a) => names.unlist(s, a, bare(handle))),
     /** Offers a name to another account, which may take it for nothing. */
     offer: (handle, address, { wallet }) => act(wallet, (s, a) => names.offerName(s, a, bare(handle), address)),
-    /** Buys a name at the price the chain holds, or takes it as offered. Its pointer is cleared unless `point` sets one (`true`: you). */
-    buy: (handle, { point } = {}, { wallet }) => act(wallet, (s, a) => names.buy(s, a, bare(handle), { point })),
+    /** Buys a name at the price the chain holds, or takes it as offered. Its pointer is cleared unless `point` sets one (`true`: you); `show`: pointed at you and shown as yours, in one transaction. */
+    buy: (handle, { point, show } = {}, { wallet }) => act(wallet, (s, a) => names.buy(s, a, bare(handle), { point, show })),
     /** Gives a name up, with its pointer; anyone may claim it next. */
     release: (handle, { wallet }) => act(wallet, (s, a) => names.release(s, a, bare(handle))),
     /** Shows `@handle` for you in every app, in one transaction: names it, and points it at you if it is yours and points elsewhere. */
