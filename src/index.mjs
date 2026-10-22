@@ -1,24 +1,22 @@
-// Moniker and app profiles for Lattice dApps.
+// Moniker, the names chain, for Lattice dApps.
 //
-// Moniker is the names chain: an account owns @names, sells or gives them,
-// and points each at a profile on every app chain that uses it. Each app
-// defines its own profiles on its own chain: a profile is an identity an
-// account owns (a card: name, photo, words, links), and the app's records are
-// written as one. A profile shows `@h` only while it names h and h on Moniker
-// points back at it.
+// An account owns @names: it sells or gives them, and points each at an
+// account, any account. An account shows `@h` in every app only while it
+// names h (`user/<a>/name` on Moniker) and h points at it, so one read of
+// Moniker decides. Apps keep their own records, cards included, on their own
+// chains, keyed by account.
 //
-//   const moniker = createMoniker({ sdk });                          // sdk: the Lattice SDK module
-//   const n = await moniker.name("@alice");                          // { handle, owner, price?, offer?, points }
-//   const people = createProfiles({ sdk, chain: ["Nexus", "testnet", "rave"], moniker });
-//   const p = await people.profile(id);                              // { id, owner, name?, avatar?, shown?, handle?, … }
-//   await people.useHandle(id, "@alice", { wallet: window.lattice }); // Moniker points @alice here; the profile names it
-//   const post = { key: `user/${id}/post/${postId}`, newValue: JSON.stringify({ text: "Great tacos", time: Date.now() }) };
-//   await people.writeAs(id, { actions: [post] }, { wallet: window.lattice });   // proof first, then the post
+//   const moniker = createMoniker({ sdk });                 // sdk: the Lattice SDK module
+//   const n = await moniker.name("@alice");                 // { handle, owner, price?, offer?, pointer? }
+//   const h = await moniker.handleOf(address);              // "alice", or undefined
+//   const hs = await moniker.handlesOf(addresses);          // for a feed, in order, from one read
+//   await moniker.label(address, card);                     // "Alice @alice"
+//   await moniker.showName("@alice", { wallet: window.lattice });
 //
 // Reads go to the first of `nodes` that answers and are checked by CID, so
 // they do not depend on trusting that node. Writes go to the wallet, which
 // shows them to the person and signs; this library never holds a key.
-import { connect, monikerClient, profilesClient } from "./client.mjs";
+import { connect, monikerClient } from "./client.mjs";
 
 /** Where Moniker lives now: the testnet trial chain and its shared hosts. */
 export const DEFAULTS = {
@@ -38,20 +36,22 @@ export function createMoniker(options) {
   return monikerClient(connect({ sdk, chain, nodes, fee, freshFor }), { app });
 }
 
-/**
- * The profiles client for the app chain `chain` (its path, as an array),
- * checking handles against `moniker` (by default `createMoniker({ sdk })`).
- * `nodes`, `fee` and `freshFor` default as for Moniker.
- */
-export function createProfiles(options) {
-  const { sdk, chain, nodes, fee, freshFor, moniker } = { ...DEFAULTS, chain: undefined, ...options };
-  if (!sdk) throw new Error("createProfiles needs { sdk }: the Lattice SDK module");
-  if (!Array.isArray(chain)) throw new Error("createProfiles needs { chain }: the app chain's path");
-  return profilesClient(connect({ sdk, chain, nodes, fee, freshFor }), moniker ?? createMoniker({ sdk }));
-}
-
-// The builders under the clients, over any state view `{ get(key), list(prefix) }`
-// (a client's `state()`), for apps that compose their own writes with `combine`.
-export { claim, MONIKER_POLICY, pointer, pointName, resolve } from "./records/names.mjs";
-export { createProfile, displayName, getProfile, getProfiles, isWebURL, label, profilesOf, proof, setShown, withHandle, writeAs } from "./records/profiles.mjs";
-export { ACCOUNT, combine, isAddress, isHandle, isProfileId } from "./records/shared.mjs";
+// The builders under the client, over any state view `{ get(key), list(prefix) }`
+// (the client's `state()`), for apps that compose their own writes with `combine`.
+export {
+  acquire,
+  buy,
+  claim,
+  displayName,
+  handleOf,
+  handlesOf,
+  label,
+  MONIKER_POLICY,
+  pointer,
+  pointName,
+  release,
+  resolve,
+  showName,
+  stopShowing,
+} from "./records/names.mjs";
+export { ACCOUNT, combine, isAddress, isHandle } from "./records/shared.mjs";

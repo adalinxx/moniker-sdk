@@ -1,10 +1,9 @@
-// What names on Moniker and profiles on app chains share: the checks the
-// policies make, token values, and writes as `{ actions, payments }` for the
-// wallet (see wallet.mjs).
+// What the records share: the checks the policy makes, token values, and
+// writes as `{ actions, payments }` for the wallet (see wallet.mjs).
 //
 // A token is a key an account holds: `<owner>`, `<owner>@<price>` (for anyone,
 // at that price) or `<owner>><account>` (offered to that account for
-// nothing). The policies see only a transaction, so a write acting for a
+// nothing). The policy sees only a transaction, so a write acting for a
 // token rewrites it to the value it has: consensus checks that value, and the
 // policy reads the owner from it. Every value read is parsed as untrusted:
 // what does not parse is left out, never fatal.
@@ -14,16 +13,7 @@ const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 /** Whether `handle` is one the policy accepts: lowercase letters, digits and `_`. */
 export const isHandle = (handle) => typeof handle === "string" && /^[a-z0-9_]+$/.test(handle);
 
-/** Whether `text` is a profile id: 16 characters of `a`–`z` and `2`–`7`. */
-export const isProfileId = (text) => typeof text === "string" && /^[a-z2-7]{16}$/.test(text);
-
-/** A new random profile id; a taken one is refused by consensus, and the client picks again. */
-export function newProfileId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return [...bytes].map((byte) => BASE32[byte % 32]).join("");
-}
-
-/** Whether `text` is an account address in its one canonical spelling, as the policies check it. */
+/** Whether `text` is an account address in its one canonical spelling, as the policy checks it. */
 export function isAddress(text) {
   return (
     typeof text === "string" &&
@@ -33,15 +23,6 @@ export function isAddress(text) {
     BASE32.indexOf(text[7]) < 8 &&
     BASE32.indexOf(text[58]) % 4 === 0
   );
-}
-
-/** A chain path as Moniker keys it: segments of letters, digits, `-` and `_`, joined by `/`. */
-export function chainPath(chain) {
-  const path = Array.isArray(chain) ? chain.join("/") : chain;
-  if (typeof path !== "string" || !path.split("/").every((segment) => /^[A-Za-z0-9_-]+$/.test(segment))) {
-    throw new Error(`not a chain path: ${chain}`);
-  }
-  return path;
 }
 
 /**
@@ -111,17 +92,17 @@ export const change = (key, oldValue, newValue) => ({ key, ...(oldValue !== unde
 /** A key rewritten to the value it has: shows the policy who holds it. */
 export const unchanged = (key, value) => ({ key, oldValue: value, newValue: value });
 
-// The keys a token's change calls for directly after it: index keys, a
-// name's pointers, a profile's own records.
-const FOLLOWS = /^(owns|names|points|about)\//;
+// The keys a token's change calls for directly after it: its index keys and
+// its pointer.
+const FOLLOWS = /^(names|points)\//;
 
 /**
  * One write of several, as one transaction. Each key is written once, where
- * it first comes (the policies read the actions in order): a key rewritten
+ * it first comes (the policy reads the actions in order): a key rewritten
  * unchanged, to show its value, gives way to a real change of the same key,
- * and the keys that change calls for (index keys, pointers, the profile's
- * records) move up with it, so they still follow it directly. Two real
- * changes of one key are an error. Payments go in the order of the
+ * and the keys that change calls for (index keys, the pointer) move up
+ * with it, so they still follow it directly. Two real changes of one key
+ * are an error. Payments go in the order of the
  * purchases they pay for, and purchases from one seller split by another's
  * are an error: the policy pays each seller's run of purchases from one
  * credit, and the wallet credits each seller once.

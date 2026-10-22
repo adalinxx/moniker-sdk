@@ -1,22 +1,18 @@
-// Chains in memory that admit a transaction the way consensus would, under
-// the real built policies: Moniker's at $MONIKER_WASM and an app's (Rave's)
-// at $APP_WASM. Build them first:
+// Moniker in memory, admitting a transaction the way consensus would, under
+// the real built policy at $MONIKER_WASM. Build it first:
 //
 //   (cd ~/src/moniker-follows/policy && cargo build --release --target wasm32-unknown-unknown)
-//   (cd ~/src/rave/policy && cargo build --release --target wasm32-unknown-unknown)
 //   LATTICE_SDK=~/src/lattice-sdk/packages/sdk/dist/index.js npm test
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { monikerClient, profilesClient } from "../src/client.mjs";
+import { monikerClient } from "../src/client.mjs";
 import { transaction } from "../src/records/wallet.mjs";
 
 const home = homedir();
 export const sdk = await import(process.env.LATTICE_SDK ?? `${home}/src/lattice-sdk/packages/sdk/dist/index.js`);
 const moniker = new WebAssembly.Module(readFileSync(process.env.MONIKER_WASM ?? `${home}/src/moniker-follows/policy/target/wasm32-unknown-unknown/release/moniker_policy.wasm`));
-const app = new WebAssembly.Module(readFileSync(process.env.APP_WASM ?? `${home}/src/rave/policy/target/wasm32-unknown-unknown/release/rave_policy.wasm`));
 
 export const MONIKER_PATH = ["Nexus", "testnet", "moniker"];
-export const APP_PATH = ["Nexus", "testnet", "rave"];
 
 export const address = (seed) => sdk.addressFromPublicKey(sdk.publicKeyFromPrivate(new Uint8Array(32).fill(seed)));
 
@@ -30,7 +26,7 @@ const u64 = (value) => {
   new DataView(bytes.buffer).setBigUint64(0, BigInt(value));
   return bytes;
 };
-// The spec as policies read it: DAG-CBOR {"targetBlockTime": 2000}.
+// The spec as a policy reads it: DAG-CBOR {"targetBlockTime": 2000}.
 const SPEC = Uint8Array.of(0xa1, 0x6f, ...new TextEncoder().encode("targetBlockTime"), 0x19, 0x07, 0xd0);
 
 /** Whether `module` accepts `body` on `path` in a block at `timestamp`, as the Lattice host runs it. */
@@ -91,27 +87,24 @@ function chain(module, path, balances) {
     }
     return true;
   }
-  const link = { chain: path, nodes: [], fee: 1n, state: async () => state, photo: async () => null };
+  const link = { chain: path, nodes: [], fee: 1n, state: async () => state };
   return { path, state, submit, map, coins, link };
 }
 
 /**
- * Moniker and one app chain, with their clients, and `wallet(who)`: a wallet
- * for account `who` that sends each request to the chain it names.
+ * Moniker, its client, and `wallet(who)`: a wallet for account `who` that
+ * sends each request to the chain.
  */
 export function world(balances = {}) {
   const names = chain(moniker, MONIKER_PATH, balances);
-  const apps = chain(app, APP_PATH, balances);
-  const monikerAPI = monikerClient(names.link, { app: "https://moniker.test/" });
-  const profilesAPI = profilesClient(apps.link, monikerAPI);
   const wallet = (who) => ({
     address: async () => who,
     writeRecords: async ({ chainPath, actions, payments = [], fee }) => {
-      const to = [names, apps].find((c) => c.path.join("/") === chainPath.join("/"));
-      const landed = to.submit(who, { actions, payments: payments.map(({ to, amount }) => ({ to, amount: BigInt(amount) })) }, BigInt(fee));
-      if (!landed) throw new Error(`refused on ${chainPath.join("/")}`);
+      if (chainPath.join("/") !== MONIKER_PATH.join("/")) throw new Error(`no chain ${chainPath.join("/")}`);
+      const landed = names.submit(who, { actions, payments: payments.map(({ to, amount }) => ({ to, amount: BigInt(amount) })) }, BigInt(fee));
+      if (!landed) throw new Error("refused");
       return { transactionCID: "bafytest" };
     },
   });
-  return { names, apps, moniker: monikerAPI, profiles: profilesAPI, wallet };
+  return { names, moniker: monikerClient(names.link, { app: "https://moniker.test/" }), wallet };
 }

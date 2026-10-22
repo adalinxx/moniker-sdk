@@ -1,7 +1,7 @@
 {
   "name": "moniker-sdk",
   "version": "0.1.2",
-  "description": "Moniker names and app profiles for Lattice dApps",
+  "description": "Moniker @names for Lattice dApps",
   "type": "module",
   "exports": {
     ".": "./src/index.mjs",

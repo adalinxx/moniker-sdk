@@ -6,7 +6,7 @@
 
 /**
  * The wallet request for `actions` on `chainPath`, paying `payments`
- * (`{ to, amount }`, as profile.mjs `buy` returns them) from the connected
+ * (`{ to, amount }`, as names.mjs `buy` returns them) from the connected
  * account. The wallet takes each payee once, so payments to one payee are
  * added together.
  */

@@ -2,70 +2,48 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as names from "../src/records/names.mjs";
-import { ACCOUNT, combine } from "../src/records/shared.mjs";
-import { address, APP_PATH, world } from "./harness.mjs";
+import { ACCOUNT, change, combine, unchanged, write } from "../src/records/shared.mjs";
+import { address, world } from "./harness.mjs";
 
 const [ALICE, BOB, CAROL] = [address(1), address(2), address(3)];
-const RAVE = APP_PATH.join("/");
-const OTHER = "Nexus/testnet/stoa-1a2b3c";
-const [P1, P2, P3] = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"];
 
-test("a name is claimed, pointed on several chains, and read with its pointers", async () => {
+test("a name is claimed, pointed at its owner or at anyone, and read with its pointer", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 100 });
   const wallet = w.wallet(ALICE);
-  await w.moniker.claim("@alice", { point: { chain: RAVE, profile: P1 } }, { wallet });
-  await w.moniker.point("alice", OTHER, P2, { wallet });
-  assert.deepEqual(await w.moniker.name("@alice"), { handle: "alice", value: ALICE, owner: ALICE, points: { [OTHER]: P2, [RAVE]: P1 } });
-  assert.equal(await w.moniker.pointer("alice", APP_PATH), P1);
-  assert.equal(await w.moniker.pointer("alice", OTHER), P2);
+  await w.moniker.claim("@alice", { point: true }, { wallet });
+  assert.deepEqual(await w.moniker.name("@alice"), { handle: "alice", value: ALICE, owner: ALICE, pointer: ALICE });
+  assert.equal(await w.moniker.pointer("alice"), ALICE);
   assert.deepEqual((await w.moniker.names(ALICE)).map((n) => n.handle), ["alice"]);
-  // Re-pointed, and pointed nowhere on one chain; nothing to write when nothing changes.
-  await w.moniker.point("alice", RAVE, P3, { wallet });
-  await w.moniker.point("alice", OTHER, null, { wallet });
-  assert.deepEqual((await w.moniker.name("alice")).points, { [RAVE]: P3 });
-  assert.equal(await w.moniker.point("alice", RAVE, P3, { wallet }), undefined);
+  // Pointed at another account, then nowhere; nothing to write when nothing changes.
+  await w.moniker.point("alice", BOB, { wallet });
+  assert.equal(await w.moniker.pointer("alice"), BOB);
+  assert.equal(await w.moniker.point("alice", BOB, { wallet }), undefined);
+  await w.moniker.point("alice", null, { wallet });
+  assert.equal(await w.moniker.pointer("alice"), undefined);
+  await assert.rejects(w.moniker.point("alice", "nobody", { wallet }), /not an address/);
   // Only the owner points it: refused here, and by the policy when written by hand.
-  await assert.rejects(w.moniker.point("alice", RAVE, P1, { wallet: w.wallet(BOB) }), /isn't yours/);
-  const forged = [{ key: "name/alice", oldValue: ALICE, newValue: ALICE }, { key: names.pointsKey("alice", RAVE), oldValue: P3, newValue: P1 }];
+  await assert.rejects(w.moniker.point("alice", BOB, { wallet: w.wallet(BOB) }), /isn't yours/);
+  const forged = [unchanged("name/alice", ALICE), change(names.pointsKey("alice"), undefined, BOB)];
   assert.ok(!w.names.submit(BOB, { actions: forged }));
   assert.ok(!w.names.submit(ALICE, { actions: forged.slice(1) }), "a pointer needs its name first");
   await assert.rejects(w.moniker.claim("alice", {}, { wallet: w.wallet(BOB) }), /taken/);
   await assert.rejects(w.moniker.claim("Alice", {}, { wallet }), /lowercase/);
 });
 
-test("a sold name loses its pointers, but the one its buyer sets in the same write", async () => {
+test("a bought name's pointer is cleared, unless the buyer sets one in the same write", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 1000 });
-  await w.moniker.claim("mira", { point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(ALICE) });
-  await w.moniker.point("mira", OTHER, P2, { wallet: w.wallet(ALICE) });
-  await w.moniker.sell("mira", 500n, { wallet: w.wallet(ALICE) });
+  await w.moniker.claim("mira", { price: 500n, point: true }, { wallet: w.wallet(ALICE) });
   assert.deepEqual((await w.moniker.forSale()).map(({ handle, price }) => [handle, price]), [["mira", 500n]]);
-  await w.moniker.buy("@mira", { point: { chain: RAVE, profile: P3 } }, { wallet: w.wallet(BOB) });
+  await w.moniker.buy("@mira", {}, { wallet: w.wallet(BOB) });
   assert.equal(w.names.coins.get(BOB), 1000n - 500n - 1n);
-  assert.equal(w.names.coins.get(ALICE), 100n - 3n + 500n);
-  const after = await w.moniker.name("mira");
-  assert.equal(after.owner, BOB);
-  // No profile keeps showing it: only the pointer Bob set is left.
-  assert.deepEqual(after.points, { [RAVE]: P3 });
+  assert.equal(w.names.coins.get(ALICE), 100n - 1n + 500n);
+  assert.deepEqual(await w.moniker.name("mira"), { handle: "mira", value: BOB, owner: BOB });
   assert.deepEqual(await w.moniker.names(ALICE), []);
-  assert.deepEqual((await w.moniker.names(BOB)).map((n) => n.handle), ["mira"]);
-});
-
-test("a name bought with no pointer, or null, loses every pointer", async () => {
-  const w = world({ [ALICE]: 100, [BOB]: 1000 });
-  await w.moniker.claim("mira", { price: 5n, point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(ALICE) });
-  await w.moniker.point("mira", OTHER, P2, { wallet: w.wallet(ALICE) });
-  await w.moniker.buy("mira", {}, { wallet: w.wallet(BOB) });
-  assert.deepEqual((await w.moniker.name("mira")).points, {});
-  await w.moniker.point("mira", RAVE, P1, { wallet: w.wallet(BOB) });
+  // Sold back, pointed at the buyer in the same write.
+  await w.moniker.point("mira", CAROL, { wallet: w.wallet(BOB) });
   await w.moniker.sell("mira", 1n, { wallet: w.wallet(BOB) });
-  await w.moniker.buy("mira", { point: null }, { wallet: w.wallet(ALICE) });
-  assert.deepEqual((await w.moniker.name("mira")).points, {});
-  // Buying it back pointed where it already points keeps that pointer.
-  await w.moniker.point("mira", RAVE, P1, { wallet: w.wallet(ALICE) });
-  await w.moniker.point("mira", OTHER, P2, { wallet: w.wallet(ALICE) });
-  await w.moniker.sell("mira", 1n, { wallet: w.wallet(ALICE) });
-  await w.moniker.buy("mira", { point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(BOB) });
-  assert.deepEqual((await w.moniker.name("mira")).points, { [RAVE]: P1 });
+  await w.moniker.buy("mira", { point: true }, { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.pointer("mira"), ALICE);
 });
 
 test("a stale price or a name not for sale is refused, and the buyer pays nothing", async () => {
@@ -85,29 +63,66 @@ test("a name offered to an account is taken by it for nothing, and by no one els
   await w.moniker.claim("gift", {}, { wallet: w.wallet(ALICE) });
   await w.moniker.offer("gift", BOB, { wallet: w.wallet(ALICE) });
   await assert.rejects(w.moniker.buy("gift", {}, { wallet: w.wallet(CAROL) }), /not for sale/);
-  await w.moniker.buy("gift", { point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(BOB) });
-  assert.deepEqual([(await w.moniker.name("gift")).owner, await w.moniker.pointer("gift", RAVE)], [BOB, P1]);
+  await w.moniker.buy("gift", { point: true }, { wallet: w.wallet(BOB) });
+  assert.deepEqual([(await w.moniker.name("gift")).owner, await w.moniker.pointer("gift")], [BOB, BOB]);
   await assert.rejects(w.moniker.offer("gift", BOB, { wallet: w.wallet(BOB) }), /someone else/);
-  await assert.rejects(w.moniker.offer("gift", P1, { wallet: w.wallet(BOB) }), /not an address/);
+  await assert.rejects(w.moniker.offer("gift", "nobody", { wallet: w.wallet(BOB) }), /not an address/);
 });
 
-test("a released name goes with every pointer it has, and is free again", async () => {
+test("a released name goes with its pointer, and is free again", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 100 });
-  await w.moniker.claim("gone", { point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(ALICE) });
-  await w.moniker.point("gone", OTHER, P2, { wallet: w.wallet(ALICE) });
+  await w.moniker.claim("gone", { point: true }, { wallet: w.wallet(ALICE) });
+  await w.moniker.showName("gone", { wallet: w.wallet(ALICE) });
   await assert.rejects(w.moniker.release("gone", { wallet: w.wallet(BOB) }), /isn't yours/);
   await w.moniker.release("gone", { wallet: w.wallet(ALICE) });
   assert.equal(await w.moniker.name("gone"), undefined);
-  assert.deepEqual([...w.names.map.keys()].filter((key) => key.includes("gone")), []);
-  // After a release, only its pointers may follow, and only as deletions.
+  assert.equal(w.names.map.get(names.pointsKey("gone")), undefined);
+  assert.equal(await w.moniker.handleOf(ALICE), undefined, "a released name shows nowhere");
+  // After a release, only its pointer may follow, and only as a deletion.
   await w.moniker.claim("gone", {}, { wallet: w.wallet(BOB) });
-  const entry = await names.resolve(w.names.state, "gone");
-  const releaseAndPoint = [
-    { key: "name/gone", oldValue: entry.value },
-    { key: names.namesKey(BOB, "gone"), oldValue: "1" },
-    { key: names.pointsKey("gone", RAVE), newValue: P1 },
-  ];
+  const releaseAndPoint = [change("name/gone", BOB, undefined), change(names.namesKey(BOB, "gone"), "1", undefined), change(names.pointsKey("gone"), undefined, BOB)];
   assert.ok(!w.names.submit(BOB, { actions: releaseAndPoint }));
+});
+
+test("an account shows a handle only while it names it and the handle points at it", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 100 });
+  // Alice's name, pointed elsewhere: showName points it at her and names it, in one transaction.
+  await w.moniker.claim("alice", { point: BOB }, { wallet: w.wallet(ALICE) });
+  const shown = await names.showName(w.names.state, ALICE, "alice");
+  assert.deepEqual(shown.actions.map((a) => a.key), ["name/alice", "points/alice", names.shownKey(ALICE)]);
+  await w.moniker.showName("@alice", { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.handleOf(ALICE), "alice");
+  assert.equal(await w.moniker.handleOf(BOB), undefined);
+  // Pointed away again, she no longer shows it, though she still names it.
+  await w.moniker.point("alice", BOB, { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.field(ALICE, "name"), "alice");
+  assert.equal(await w.moniker.handleOf(ALICE), undefined);
+  // Pointed at Bob, it shows for Bob only once he names it.
+  assert.equal(await w.moniker.handleOf(BOB), undefined, "a name pointed at you doesn't show until you name it");
+  await w.moniker.showName("alice", { wallet: w.wallet(BOB) }); // not his, but it points at him
+  assert.equal(await w.moniker.handleOf(BOB), "alice");
+  assert.deepEqual(await w.moniker.handlesOf([ALICE, BOB, address(9)]), [undefined, "alice", undefined]);
+  // A name that is neither yours nor pointed at you can't be shown; nor can a free one.
+  await w.moniker.claim("carol", {}, { wallet: w.wallet(ALICE) });
+  await assert.rejects(w.moniker.showName("carol", { wallet: w.wallet(BOB) }), /doesn't point at you/);
+  await assert.rejects(w.moniker.showName("nobody", { wallet: w.wallet(BOB) }), /No one owns/);
+  // Only the account writes what it names.
+  assert.ok(!w.names.submit(ALICE, await names.setField(w.names.state, BOB, "name", "carol")));
+  await w.moniker.stopShowing({ wallet: w.wallet(BOB) });
+  assert.equal(await w.moniker.handleOf(BOB), undefined);
+  assert.equal(await w.moniker.stopShowing({ wallet: w.wallet(BOB) }), undefined, "nothing to write");
+});
+
+test("labels: a card name never passes for a handle; the verified handle sits beside it", async () => {
+  const w = world({ [ALICE]: 100 });
+  await w.moniker.claim("dana", { point: true }, { wallet: w.wallet(ALICE) });
+  await w.moniker.showName("dana", { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.label(ALICE, { name: "Dana Okafor" }), "Dana Okafor @dana");
+  assert.equal(await w.moniker.label(ALICE), "@dana");
+  assert.equal(await w.moniker.label(BOB, { name: "@dana" }), "dana");
+  assert.equal(await w.moniker.label(BOB, { name: "@@" }), `…${BOB.slice(-6)}`);
+  assert.equal(names.label(BOB), `…${BOB.slice(-6)}`);
+  assert.equal(names.displayName("@@x"), "x");
 });
 
 test("prices fit a credit; a price of 0 owes nothing", async () => {
@@ -120,22 +135,21 @@ test("prices fit a credit; a price of 0 owes nothing", async () => {
   assert.equal((await w.moniker.name("big")).owner, BOB);
 });
 
-test("a name bought by request passes the policy once the wallet fills in the account", async () => {
+test("a name bought by request points at the signer and passes the policy once the wallet fills in the account", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 1000 });
-  const fill = (write, who) => ({
-    actions: JSON.parse(JSON.stringify(write.actions).replaceAll(ACCOUNT, who)),
-    payments: write.payments,
-  });
+  const fill = (write, who) => ({ actions: JSON.parse(JSON.stringify(write.actions).replaceAll(ACCOUNT, who)), payments: write.payments });
   const request = (uri) => JSON.parse(Buffer.from(new URL(uri).searchParams.get("intent"), "base64url").toString("utf8"));
-  assert.deepEqual(request(await w.moniker.buyRequest("@fresh")).actions, names.acquire("fresh").actions);
-  assert.ok(w.names.submit(BOB, fill(names.acquire("fresh"), BOB)));
-  await w.moniker.claim("listed", { price: 7n, point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(ALICE) });
-  const listed = await names.resolve(w.names.state, "listed");
-  assert.deepEqual(request(await w.moniker.buyRequest("listed")).payments, [{ to: ALICE, amount: "7" }]);
-  assert.ok(w.names.submit(BOB, fill(names.acquire("listed", listed), BOB)));
+  const fresh = request(await w.moniker.buyRequest("@fresh"));
+  assert.deepEqual(fresh.actions, names.acquire("fresh").actions);
+  assert.ok(w.names.submit(BOB, fill(fresh, BOB)));
+  assert.equal(await w.moniker.pointer("fresh"), BOB);
+  await w.moniker.claim("listed", { price: 7n, point: true }, { wallet: w.wallet(ALICE) });
+  const listed = request(await w.moniker.buyRequest("listed"));
+  assert.deepEqual(listed.payments, [{ to: ALICE, amount: "7" }]);
+  assert.ok(w.names.submit(BOB, fill({ actions: listed.actions, payments: [{ to: ALICE, amount: 7n }] }, BOB)));
   assert.deepEqual((await w.moniker.names(BOB)).map((n) => n.handle), ["fresh", "listed"]);
   assert.equal(w.names.coins.get(ALICE), 100n - 1n + 7n);
-  assert.deepEqual((await w.moniker.name("listed")).points, {}, "a request deletes the pointers too");
+  assert.equal(await w.moniker.pointer("listed"), BOB, "no longer pointing at the seller");
   // Only a free name or one for sale can be requested.
   await w.moniker.claim("kept", {}, { wallet: w.wallet(ALICE) });
   await assert.rejects(w.moniker.buyRequest("kept"), /not for sale/);
@@ -155,11 +169,11 @@ test("an account's own fields are set and removed, by it alone", async () => {
   assert.equal(await w.moniker.field(ALICE, "app.demo.color"), undefined);
 });
 
-test("combine keeps each key where it first comes, and refuses a key changed twice or split purchases", async () => {
-  const w = world({ [ALICE]: 100 });
+test("combine keeps each key where it first comes, moves a token's index keys and pointer with it, and pays in purchase order", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 1000, [CAROL]: 100 });
   await w.moniker.claim("one", {}, { wallet: w.wallet(ALICE) });
-  const both = combine(await names.pointName(w.names.state, ALICE, "one", RAVE, P1), await names.list(w.names.state, ALICE, "one", 9n));
-  assert.deepEqual(both.actions.map((a) => a.key), ["name/one", names.pointsKey("one", RAVE)]);
+  const both = combine(await names.pointName(w.names.state, ALICE, "one", ALICE), await names.list(w.names.state, ALICE, "one", 9n));
+  assert.deepEqual(both.actions.map((a) => a.key), ["name/one", "points/one"]);
   assert.equal(both.actions[0].newValue, `${ALICE}@9`);
   assert.ok(w.names.submit(ALICE, both));
   const twice = [await names.list(w.names.state, ALICE, "one", 1n), await names.list(w.names.state, ALICE, "one", 2n)];
@@ -167,4 +181,13 @@ test("combine keeps each key where it first comes, and refuses a key changed twi
   const pays = (to) => ({ actions: [], payments: [{ to, amount: 5n }] });
   assert.doesNotThrow(() => combine(pays(ALICE), pays(ALICE), pays(CAROL)));
   assert.throws(() => combine(pays(ALICE), pays(CAROL), pays(ALICE)), /come together/);
+  // A rewrite of "two" comes first; buying "one" then "two" moves two's purchase up, with its index keys, and pays Carol first.
+  await w.moniker.claim("two", { price: 4n }, { wallet: w.wallet(CAROL) });
+  const s = w.names.state;
+  const shows = write([unchanged("name/two", `${CAROL}@4`)]);
+  const bought = combine(shows, await names.buy(s, BOB, "one", { point: true }), await names.buy(s, BOB, "two", { point: true }));
+  assert.deepEqual(bought.actions.map((a) => a.key).slice(0, 4), ["name/two", names.namesKey(CAROL, "two"), names.namesKey(BOB, "two"), "points/two"]);
+  assert.deepEqual(bought.payments.map((p) => p.to), [CAROL, ALICE]);
+  assert.ok(w.names.submit(BOB, bought));
+  assert.deepEqual([await w.moniker.pointer("one"), await w.moniker.pointer("two")], [BOB, BOB]);
 });

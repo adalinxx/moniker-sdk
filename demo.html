@@ -15,26 +15,27 @@
 <body>
 <main>
   <h1>Moniker in your app</h1>
-  <p>A byline for a profile on an app's chain, its handle checked against Moniker:</p>
+  <p>A byline: the name your app knows an account by, and its handle, verified on Moniker:</p>
   <div class="post" id="post"><p>Hello from a post.</p></div>
   <p>The code:</p>
-  <pre>import { createMoniker, createProfiles, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.2.0/src/browser.mjs";
+  <pre>import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.2.0/src/browser.mjs";
 const moniker = createMoniker();
-const people = createProfiles({ chain: ["Nexus", "testnet", "rave-186079"], moniker });
-defineMonikerName(people);
-// &lt;moniker-name profile="…"&gt;&lt;/moniker-name&gt;</pre>
+defineMonikerName(moniker);
+// &lt;moniker-name address="…" name="…"&gt;&lt;/moniker-name&gt;</pre>
 </main>
 <script type="module">
-  import { createMoniker, createProfiles, defineMonikerName } from "./src/browser.mjs";
-  // ?app=<chain path>, ?profile=… or ?handle=…, and ?node=… for trying other chains and hosts.
+  import { createMoniker, defineMonikerName } from "./src/browser.mjs";
+  // ?address=… or ?handle=…, ?name=…, and ?node=… / ?chain=… for trying another chain.
   const query = new URLSearchParams(location.search);
-  const nodes = query.get("node") ? { nodes: [query.get("node")] } : {};
-  const moniker = createMoniker(nodes);
-  const people = createProfiles({ ...nodes, chain: (query.get("app") ?? "Nexus/testnet/rave-186079").split("/"), moniker });
-  defineMonikerName(people);
-  const id = query.get("profile") ?? (await people.profileOf(query.get("handle") ?? "moniker").catch(() => undefined))?.id;
+  const moniker = createMoniker({
+    ...(query.get("node") && { nodes: [query.get("node")] }),
+    ...(query.get("chain") && { chain: query.get("chain").split("/") }),
+  });
+  defineMonikerName(moniker);
+  const address = query.get("address") ?? (await moniker.pointer(query.get("handle") ?? "moniker").catch(() => undefined));
   const byline = document.createElement("moniker-name");
-  byline.setAttribute("profile", id ?? "");
+  byline.setAttribute("address", address ?? "");
+  if (query.get("name")) byline.setAttribute("name", query.get("name"));
   document.getElementById("post").prepend(byline);
 </script>
 </body>

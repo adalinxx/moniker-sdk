@@ -12,11 +12,12 @@ const intent = (uri) => {
   return JSON.parse(Buffer.from(url.searchParams.get("intent"), "base64url").toString("utf8"));
 };
 
-test("a free name is claimed for whichever account signs, with its names/ key", () => {
+test("a free name is claimed for whichever account signs, with its names/ key, pointed at it", () => {
   assert.deepEqual(acquire("rae"), {
     actions: [
       { key: "name/rae", newValue: ACCOUNT },
       { key: `names/${ACCOUNT}/rae`, newValue: "1" },
+      { key: "points/rae", newValue: ACCOUNT },
     ],
     payments: [],
   });
@@ -29,6 +30,7 @@ test("a listed name is bought at the price read, paid to its owner", () => {
     { key: "name/rae", oldValue: `${owner}@500`, newValue: ACCOUNT },
     { key: `names/${owner}/rae`, oldValue: "1" },
     { key: `names/${ACCOUNT}/rae`, newValue: "1" },
+    { key: "points/rae", newValue: ACCOUNT },
   ]);
   assert.deepEqual(payments, [{ to: owner, amount: 500n }]);
   assert.throws(() => acquire("rae", { ...entry, price: undefined }), /not for sale/);

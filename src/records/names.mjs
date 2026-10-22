@@ -3,24 +3,23 @@
 // `{ actions, payments? }` for the wallet (see wallet.mjs).
 //
 // An account owns names (@handles): assets it may sell or give, and point at
-// a profile on each app chain that uses them. The profiles live on those
-// chains (see profiles.mjs); a profile shows a handle only while it names
-// that handle and the handle points back at it.
+// an account, any account. An account shows `@h`, in every app, only while it
+// names h (`user/<a>/name`) and h points at it: one read of Moniker decides.
 //
 // Keys:
 //   name/<h>               <owner>, <owner>@<price> or <owner>><account> (offered to it)
 //   names/<a>/<h>          1 while <a> owns <h>
-//   points/<h>/<chain>     the profile id <h> points at on app chain <chain> (a path such as Nexus/testnet/rave)
-//   user/<a>/<field>       the account's own: key.x25519, app.<name>.<field>
+//   points/<h>             the account <h> points at
+//   user/<a>/name          the handle <a> shows
+//   user/<a>/<field>       the account's other fields: key.x25519, app.<name>.<field>
 //
 // The policy reads a transaction in order: a name, then the index keys it
-// moves (the one it leaves first), then its pointers, which only the name's
-// owner writes. A released name may be followed only by deleting its
-// pointers.
-import { ACCOUNT, change, chainPath, checkedTerms, heldToken, isHandle, isProfileId, paymentFor, takeable, tokenValue, unchanged, write } from "./shared.mjs";
+// moves (the one it leaves first), then its pointer, which only the name's
+// owner writes. A released name may be followed only by deleting its pointer.
+import { ACCOUNT, change, checkedTerms, combine, heldToken, isAddress, isHandle, paymentFor, takeable, tokenValue, unchanged, write } from "./shared.mjs";
 
 /** The CID of the Moniker policy module this release reads and writes for; set at each release. */
-export const MONIKER_POLICY = "bafyreieg5pneszyq5e6ygfwg2otdf5cecekbbw25sg5kkr7letnfb4jjve";
+export const MONIKER_POLICY = "bafyreihnnbeuihjlw23xswfhduf23xbltsmn37oymwshmenmzsabgv4fzu";
 
 /**
  * Whether a chain spec (see state.mjs `chainSpec`) runs the Moniker policy.
@@ -38,44 +37,46 @@ export const runsMoniker = (spec) =>
 
 export const nameKey = (handle) => `name/${handle}`;
 export const namesKey = (account, handle) => `names/${account}/${handle}`;
-export const pointsKey = (handle, chain) => `points/${handle}/${chainPath(chain)}`;
+export const pointsKey = (handle) => `points/${handle}`;
 export const fieldKey = (account, field) => `user/${account}/${field}`;
+export const shownKey = (account) => fieldKey(account, "name");
 
 const checkedHandle = (handle) => {
   if (!isHandle(handle)) throw new Error(`${handle}: a handle is lowercase letters, digits and _`);
   return handle;
 };
 
+const checkedAccount = (account) => {
+  if (!isAddress(account)) throw new Error(`not an address: ${account}`);
+  return account;
+};
+
 // Reading.
 
-/** The pointers of `handle` as `{ [chain]: profile id }`; raw values are kept as `[key, value]` in `keys`. */
-async function pointersOf(state, handle) {
-  const prefix = `points/${handle}/`;
-  const points = {};
-  const keys = [];
-  for await (const [key, value] of state.list(prefix)) {
-    keys.push([key, value]);
-    if (isProfileId(value)) points[key.slice(prefix.length)] = value;
-  }
-  return { points, keys };
-}
-
-/**
- * The name as held: `{ handle, value, owner, price?, offer?, points }`, where
- * `points` is `{ [chain]: profile id }`; undefined when the name is free.
- */
+/** The name as held: `{ handle, value, owner, price?, offer?, pointer? }`, where `pointer` is the account it points at; undefined when free. */
 export async function resolve(state, handle) {
   if (!isHandle(handle)) return undefined;
   const token = await heldToken(state, nameKey(handle));
-  return token && { handle, ...token, points: (await pointersOf(state, handle)).points };
+  if (!token) return undefined;
+  const pointer = await state.get(pointsKey(handle));
+  return { handle, ...token, ...(pointer !== undefined && { pointer }) };
 }
 
-/** The profile id `handle` points at on `chain`, or undefined. */
-export async function pointer(state, handle, chain) {
+/** The account `handle` points at, or undefined. */
+export async function pointer(state, handle) {
   if (!isHandle(handle)) return undefined;
-  const value = await state.get(pointsKey(handle, chain));
-  return isProfileId(value) ? value : undefined;
+  const value = await state.get(pointsKey(handle));
+  return isAddress(value) ? value : undefined;
 }
+
+/** The handle `account` shows: the one it names, while that handle points at it; else undefined. */
+export async function handleOf(state, account) {
+  const handle = await state.get(shownKey(account));
+  return isHandle(handle) && (await state.get(pointsKey(handle))) === account ? handle : undefined;
+}
+
+/** `handleOf` for many accounts, in order, from one state. */
+export const handlesOf = (state, accounts) => Promise.all(accounts.map((account) => handleOf(state, account)));
 
 /** The names `account` owns, as `resolve` returns them, in handle order: one prefix read of `names/`. */
 export async function namesOf(state, account) {
@@ -113,6 +114,20 @@ export async function getFields(state, account) {
 
 export const getField = (state, account, field) => state.get(fieldKey(account, field));
 
+/** A card name for display, without leading `@`s, which only a verified handle shows; undefined when empty. */
+export const displayName = (name) => (typeof name === "string" ? name.replace(/^@+/, "").trim() : "") || undefined;
+
+/**
+ * What to show for an account: a card `name` (an app's own, leading `@`s
+ * dropped) with the verified `handle` beside it ("Dana Okafor @dana"), else
+ * the handle, else the end of the address.
+ */
+export function label(account, { name, handle } = {}) {
+  const shown = displayName(name);
+  const at = handle ? `@${handle}` : undefined;
+  return shown && at ? `${shown} ${at}` : (shown ?? at ?? `…${String(account).slice(-6)}`);
+}
+
 // Writing.
 
 /** The name `handle`, which `account` owns. */
@@ -123,51 +138,32 @@ async function ownName(state, account, handle) {
   return entry;
 }
 
-/**
- * The pointer changes `point` asks for, to follow a name its new owner
- * signs for: `{ chain, profile }` sets that chain's pointer; null deletes
- * every pointer; undefined leaves them as they are.
- */
-async function pointing(state, handle, point) {
-  if (point === undefined) return [];
-  if (point === null) return (await pointersOf(state, handle)).keys.map(([key, value]) => change(key, value, undefined));
-  if (!isProfileId(point.profile)) throw new Error(`not a profile: ${point.profile}`);
-  const key = pointsKey(handle, point.chain);
-  const old = await state.get(key);
-  return old === point.profile ? [] : [change(key, old, point.profile)];
-}
+/** The pointer of `handle` changed from `old` to `to` (null or undefined: nowhere), if that changes it. */
+const repoint = (handle, old, to) => (old === (to ?? undefined) ? [] : [change(pointsKey(handle), old, to ?? undefined)]);
 
-/** Every pointer of `handle` deleted, but `point`'s (`{ chain, profile }`), which is set. */
-async function repointed(state, handle, point) {
-  const set = point ? await pointing(state, handle, point) : [];
-  const kept = point ? pointsKey(handle, point.chain) : undefined;
-  const cleared = (await pointersOf(state, handle)).keys.filter(([key]) => key !== kept).map(([key, value]) => change(key, value, undefined));
-  return [...cleared, ...set];
-}
+/** `point` as an account, `true` standing for `account`. */
+const target = (point, account) => (point === true ? account : point == null ? point : checkedAccount(point));
 
 /**
  * `account` claims the free `handle`, for sale at `price` or not, pointed at
- * `point` (`{ chain, profile }`) if given.
+ * account `point` if given (`true`: itself).
  */
 export async function claim(state, account, handle, { price, point } = {}) {
   checkedHandle(handle);
   if ((await state.get(nameKey(handle))) !== undefined) throw new Error(`@${handle} is taken`);
+  const to = target(point, account);
   return write([
     change(nameKey(handle), undefined, tokenValue(account, { price })),
     change(namesKey(account, handle), undefined, "1"),
-    ...(await pointing(state, handle, point)),
+    ...(to != null ? repoint(handle, await state.get(pointsKey(handle)), to) : []),
   ]);
 }
 
-/** Points `handle`, which `account` owns, at profile `p` on `chain`, or nowhere there when `p` is null. */
-export async function pointName(state, account, handle, chain, p) {
-  if (p != null && !isProfileId(p)) throw new Error(`not a profile: ${p}`);
+/** Points `handle`, which `account` owns, at account `to` (`true`: itself), or nowhere when null. */
+export async function pointName(state, account, handle, to) {
   const entry = await ownName(state, account, handle);
-  const key = pointsKey(handle, chain);
-  const old = await state.get(key);
-  const next = p ?? undefined;
-  if (old === next) return write([]);
-  return write([unchanged(nameKey(handle), entry.value), change(key, old, next)]);
+  const changes = repoint(handle, entry.pointer, target(to, account));
+  return write(changes.length > 0 ? [unchanged(nameKey(handle), entry.value), ...changes] : []);
 }
 
 /** Puts `handle` up for sale at `price`. Anyone may then buy it at that price. */
@@ -192,11 +188,11 @@ export async function offerName(state, account, handle, to) {
 
 /**
  * `account` takes `handle`: bought at the price the chain holds, its owner
- * paid in the same transaction, or taken as offered to it. Every pointer the
- * name has is deleted, so no profile keeps showing it, except the one `point`
- * (`{ chain, profile }`) sets.
+ * paid in the same transaction, or taken as offered to it. Its pointer is
+ * cleared, so no one keeps showing it, unless `point` sets a new one
+ * (an account, or `true` for the buyer).
  */
-export async function buy(state, account, handle, { point } = {}) {
+export async function buy(state, account, handle, { point = null } = {}) {
   const entry = await resolve(state, checkedHandle(handle));
   if (!entry) throw new Error(`No one owns @${handle}`);
   takeable(entry, account, `@${handle}`);
@@ -205,42 +201,33 @@ export async function buy(state, account, handle, { point } = {}) {
       change(nameKey(handle), entry.value, account),
       change(namesKey(entry.owner, handle), "1", undefined),
       change(namesKey(account, handle), undefined, "1"),
-      ...(await repointed(state, handle, point)),
+      ...repoint(handle, entry.pointer, target(point, account)),
     ],
     paymentFor(entry),
   );
 }
 
 /**
- * `handle` taken by whichever account signs, with no address needed: claimed
- * when `entry` (as `resolve` returns it) is undefined, else bought at its
- * price, with every pointer it has deleted; its new owner points it next.
- * For `writeRequestURI`, not `send`. The signer isn't known here: if it
- * already owns the name, the transaction is refused.
+ * `handle` taken by whichever account signs, with no address needed, and
+ * pointed at it: claimed when `entry` (as `resolve` returns it) is
+ * undefined, else bought at its price. `pointerNow` is the pointer the chain
+ * holds (for a free name, one a release left behind). For
+ * `writeRequestURI`, not `send`. The signer isn't known here: if it already
+ * owns the name, the transaction is refused.
  */
-export function acquire(handle, entry) {
+export function acquire(handle, entry, pointerNow = entry?.pointer) {
   checkedHandle(handle);
   if (entry && entry.price === undefined) throw new Error(`@${handle} is not for sale`);
-  if (!entry) return write([change(nameKey(handle), undefined, ACCOUNT), change(namesKey(ACCOUNT, handle), undefined, "1")]);
-  return write(
-    [
-      change(nameKey(handle), entry.value, ACCOUNT),
-      change(namesKey(entry.owner, handle), "1", undefined),
-      change(namesKey(ACCOUNT, handle), undefined, "1"),
-      ...Object.entries(entry.points ?? {}).map(([chain, p]) => change(pointsKey(handle, chain), p, undefined)),
-    ],
-    paymentFor(entry),
-  );
+  const taken = entry
+    ? [change(nameKey(handle), entry.value, ACCOUNT), change(namesKey(entry.owner, handle), "1", undefined)]
+    : [change(nameKey(handle), undefined, ACCOUNT)];
+  return write([...taken, change(namesKey(ACCOUNT, handle), undefined, "1"), change(pointsKey(handle), pointerNow, ACCOUNT)], entry ? paymentFor(entry) : []);
 }
 
-/** Gives `handle` up, with every pointer it has; anyone may claim it next. */
+/** Gives `handle` up, with its pointer; anyone may claim it next. */
 export async function release(state, account, handle) {
   const entry = await ownName(state, account, handle);
-  return write([
-    change(nameKey(handle), entry.value, undefined),
-    change(namesKey(account, handle), "1", undefined),
-    ...(await pointing(state, handle, null)),
-  ]);
+  return write([change(nameKey(handle), entry.value, undefined), change(namesKey(account, handle), "1", undefined), ...repoint(handle, entry.pointer, null)]);
 }
 
 /** Sets `account`'s field, or removes it when undefined. */
@@ -251,3 +238,22 @@ export async function setField(state, account, field, value) {
   if (value === oldValue) return write([]);
   return write([change(key, oldValue, value)]);
 }
+
+/**
+ * `account` shows `handle`, in one transaction: it names the handle, and if
+ * the handle is its own and points elsewhere, points it at itself. A handle
+ * someone else owns can be shown only while it points at `account`.
+ */
+export async function showName(state, account, handle) {
+  const entry = await resolve(state, checkedHandle(handle));
+  if (!entry) throw new Error(`No one owns @${handle}`);
+  let pointed = write([]);
+  if (entry.pointer !== account) {
+    if (entry.owner !== account) throw new Error(`@${handle} doesn't point at you`);
+    pointed = await pointName(state, account, handle, account);
+  }
+  return combine(pointed, await setField(state, account, "name", handle));
+}
+
+/** `account` shows no handle. */
+export const stopShowing = (state, account) => setField(state, account, "name", undefined);
