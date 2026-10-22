@@ -51,13 +51,15 @@ await moniker.buy("@alice", { point: { chain: RAVE, profile: id } }, { wallet })
 await moniker.release("@alice", { wallet });              // with every pointer it has
 ```
 
-A sale moves only the name: its pointers stay until the new owner changes
-them (`buy` with `point`, or `point: null` to clear them all). `field` and
+A sale moves only the name, and deletes its pointers, so no profile keeps
+showing it; `buy` with `point` sets the buyer's one in the same write. `field` and
 `setField` keep an account's own values, such as `key.x25519` or
 `app.<your app>.<field>`.
 
 A name can be bought with no address, by any wallet, as a `lattice://write`
-request: the wallet fills in the account the person chooses.
+request: the wallet fills in the account the person chooses. Only a free
+name or one for sale can be requested; a signer who already owns it is
+refused by the chain.
 
 ```js
 const uri = await moniker.buyRequest("rae");     // lattice://write?v=1&intent=…, valid 15 minutes
@@ -78,13 +80,14 @@ const p = await people.profile(id);              // { id, owner, price?, offer?,
 const feed = await people.profiles(ids);         // bylines for a feed, in order, from one read
 await people.profilesOf(address);                // an account's profiles here
 img.src = await people.photo(p.avatar);          // an object URL, or null
-people.label(p);                                 // name, else @handle, else the end of the id
+people.label(p);                                 // "Dana Okafor @dana": card name (no leading @), verified handle beside it
 
 await people.sell(id, 700n, { wallet });         // unlist, offer(id, account), buy(id)
 ```
 
-A sale moves the profile with its card and records; from then on only its
-new owner writes as it.
+A sale moves the profile with its card and records, but not the handle it
+showed (`about/<p>/name` is deleted); from then on only its new owner writes
+as it.
 
 ### Showing a handle
 
@@ -113,6 +116,12 @@ await people.writeAs(id, { actions: [{ key: `user/${id}/review/42`, newValue: JS
 // Or build it yourself, from a state view:
 const actions = [...(await people.proof(await people.state({ fresh: true }), id, account)), ...mine];
 ```
+
+The builders under the clients are exported too, over any state view (a
+client's `state()`): `proof`, `writeAs`, `createProfile`, `getProfile`,
+`getProfiles`, `profilesOf`, `setShown`, `withHandle`, `label` for profiles;
+`claim`, `pointName`, `resolve`, `pointer` for names. Each returns
+`{ actions, payments }` (or reads), for `combine` and your own send.
 
 `combine(...writes)` joins writes into one transaction the way the policies
 read it: each key changes once, where it first comes, an unchanged proof

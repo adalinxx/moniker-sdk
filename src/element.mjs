@@ -10,6 +10,8 @@
 // --moniker-muted, --moniker-accent, --moniker-avatar (the photo's backdrop).
 // Names in a feed share one read of the chain.
 
+import { displayName } from "./records/profiles.mjs";
+
 const style = `
   :host { display: inline-flex; align-items: center; gap: 0.5em; font: inherit; color: var(--moniker-ink, inherit); min-width: 0; }
   a { display: inline-flex; align-items: center; gap: 0.5em; color: inherit; text-decoration: none; min-width: 0; }
@@ -73,11 +75,13 @@ export function defineMonikerName(profiles, tag = "moniker-name") {
         const photo = document.createElement("span");
         photo.className = "photo";
         photo.style.cssText = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`;
-        photo.textContent = (p.name?.trim()?.[0] ?? p.handle?.[0] ?? "?").toUpperCase();
+        // A card name is shown without leading @s: only a verified handle has one.
+        const cardName = displayName(p);
+        photo.textContent = (cardName?.trim()?.[0] ?? p.handle?.[0] ?? "?").toUpperCase();
         photo.setAttribute("aria-hidden", "true");
-        const name = Object.assign(document.createElement("span"), { className: "name", textContent: profiles.label(p) });
+        const name = Object.assign(document.createElement("span"), { className: "name", textContent: cardName ?? profiles.label(p) });
         outer.append(photo, name);
-        if (p.handle && p.name) outer.append(Object.assign(document.createElement("span"), { className: "handle", textContent: `@${p.handle}` }));
+        if (p.handle && cardName) outer.append(Object.assign(document.createElement("span"), { className: "handle", textContent: `@${p.handle}` }));
         root.append(outer);
 
         const url = await profiles.photo(p.avatar);

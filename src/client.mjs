@@ -115,7 +115,7 @@ export function monikerClient(link, { app }) {
     offer: (handle, address, { wallet }) => act(wallet, (s, a) => names.offerName(s, a, bare(handle), address)),
     /**
      * Buys a name at the price the chain holds, or takes it as offered. Its
-     * pointers stay; `point` sets one (`{ chain, profile }`) or clears them all (null).
+     * pointers are deleted, but the one `point` (`{ chain, profile }`) sets.
      */
     buy: (handle, { point } = {}, { wallet }) => act(wallet, (s, a) => names.buy(s, a, bare(handle), { point })),
     /** Gives a name up, with its pointers; anyone may claim it next. */
@@ -126,7 +126,9 @@ export function monikerClient(link, { app }) {
      * A lattice://write request that claims `@handle`, or buys it at the
      * price the chain holds now, for whichever account signs it: no wallet
      * or address needed here. Hand it to `window.lattice.openRequest` from a
-     * click, or show it as a QR code or text. The new owner points it later.
+     * click, or show it as a QR code or text. The name's pointers are
+     * deleted; the new owner points it later. Refused here when the name is
+     * held and not for sale, and by the chain when the signer already owns it.
      */
     buyRequest: async (handle) => {
       const name = bare(handle);
@@ -190,8 +192,8 @@ export function profilesClient(link, moniker) {
       const [found] = await read([p]);
       return found.owner ? { ...found, namesBack: found.handle === h } : undefined;
     },
-    /** What to show in a byline: the card's name, else its @handle, else the end of its id. */
-    label: (p) => p.name ?? (p.handle ? `@${p.handle}` : `Profile …${p.id.slice(-6)}`),
+    /** What to show for a profile: its card name with its verified @handle beside it, else the handle, else the end of its id. */
+    label: profiles.label,
     photo: link.photo,
 
     // ---- writing, through the person's wallet, as the connected account

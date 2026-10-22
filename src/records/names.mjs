@@ -137,6 +137,14 @@ async function pointing(state, handle, point) {
   return old === point.profile ? [] : [change(key, old, point.profile)];
 }
 
+/** Every pointer of `handle` deleted, but `point`'s (`{ chain, profile }`), which is set. */
+async function repointed(state, handle, point) {
+  const set = point ? await pointing(state, handle, point) : [];
+  const kept = point ? pointsKey(handle, point.chain) : undefined;
+  const cleared = (await pointersOf(state, handle)).keys.filter(([key]) => key !== kept).map(([key, value]) => change(key, value, undefined));
+  return [...cleared, ...set];
+}
+
 /**
  * `account` claims the free `handle`, for sale at `price` or not, pointed at
  * `point` (`{ chain, profile }`) if given.
@@ -184,9 +192,9 @@ export async function offerName(state, account, handle, to) {
 
 /**
  * `account` takes `handle`: bought at the price the chain holds, its owner
- * paid in the same transaction, or taken as offered to it. Only the name
- * moves: its pointers stay until its new owner changes them, here with
- * `point` (`{ chain, profile }`, or null for nowhere).
+ * paid in the same transaction, or taken as offered to it. Every pointer the
+ * name has is deleted, so no profile keeps showing it, except the one `point`
+ * (`{ chain, profile }`) sets.
  */
 export async function buy(state, account, handle, { point } = {}) {
   const entry = await resolve(state, checkedHandle(handle));
@@ -197,7 +205,7 @@ export async function buy(state, account, handle, { point } = {}) {
       change(nameKey(handle), entry.value, account),
       change(namesKey(entry.owner, handle), "1", undefined),
       change(namesKey(account, handle), undefined, "1"),
-      ...(await pointing(state, handle, point)),
+      ...(await repointed(state, handle, point)),
     ],
     paymentFor(entry),
   );
@@ -206,15 +214,21 @@ export async function buy(state, account, handle, { point } = {}) {
 /**
  * `handle` taken by whichever account signs, with no address needed: claimed
  * when `entry` (as `resolve` returns it) is undefined, else bought at its
- * price. Its pointers stay until its new owner changes them. For
- * `writeRequestURI`, not `send`.
+ * price, with every pointer it has deleted; its new owner points it next.
+ * For `writeRequestURI`, not `send`. The signer isn't known here: if it
+ * already owns the name, the transaction is refused.
  */
 export function acquire(handle, entry) {
   checkedHandle(handle);
   if (entry && entry.price === undefined) throw new Error(`@${handle} is not for sale`);
   if (!entry) return write([change(nameKey(handle), undefined, ACCOUNT), change(namesKey(ACCOUNT, handle), undefined, "1")]);
   return write(
-    [change(nameKey(handle), entry.value, ACCOUNT), change(namesKey(entry.owner, handle), "1", undefined), change(namesKey(ACCOUNT, handle), undefined, "1")],
+    [
+      change(nameKey(handle), entry.value, ACCOUNT),
+      change(namesKey(entry.owner, handle), "1", undefined),
+      change(namesKey(ACCOUNT, handle), undefined, "1"),
+      ...Object.entries(entry.points ?? {}).map(([chain, p]) => change(pointsKey(handle, chain), p, undefined)),
+    ],
     paymentFor(entry),
   );
 }

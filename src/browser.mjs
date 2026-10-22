@@ -7,7 +7,7 @@
 import * as sdk from "../vendor/lattice-sdk.js";
 import { createMoniker as monikerOver, createProfiles as profilesOver } from "./index.mjs";
 
-export { ACCOUNT, combine, DEFAULTS, isAddress, isHandle, isProfileId, isWebURL, MONIKER_POLICY } from "./index.mjs";
+export * from "./index.mjs";
 export { defineMonikerName } from "./element.mjs";
 export const createMoniker = (options = {}) => monikerOver({ sdk, ...options });
 export const createProfiles = (options = {}) => profilesOver({ sdk, ...options });

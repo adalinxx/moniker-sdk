@@ -94,6 +94,19 @@ export const getProfiles = (state, ids) => Promise.all(ids.map(async (p) => (awa
  */
 export const withHandle = (profile, pointer) => (profile.shown !== undefined && pointer === profile.id ? { ...profile, handle: profile.shown } : profile);
 
+/** A card name for display, without leading `@`s, which only a verified handle shows; undefined when empty. */
+export const displayName = (p) => p.name?.replace(/^@+/, "") || undefined;
+
+/**
+ * What to show for a profile: its card name with its verified handle beside
+ * it ("Dana Okafor @dana"), else the handle, else the end of its id.
+ */
+export function label(p) {
+  const name = displayName(p);
+  const handle = p.handle ? `@${p.handle}` : undefined;
+  return name && handle ? `${name} ${handle}` : (name ?? handle ?? `Profile …${p.id.slice(-6)}`);
+}
+
 /** The profiles `account` owns: one prefix read of `owns/`. */
 export async function profilesOf(state, account) {
   const prefix = `owns/${account}/`;
@@ -227,14 +240,21 @@ export async function setProfileTerms(state, account, p, terms = {}) {
 
 /**
  * `account` takes profile `p`, with its card and records: bought at its
- * price, paid to its owner, or taken as offered to `account`.
+ * price, paid to its owner, or taken as offered to `account`. The handle it
+ * showed was the last owner's, so it is cleared.
  */
 export async function takeProfile(state, account, p) {
   const token = await profileToken(state, p);
   if (!token) throw new Error("No such profile");
   takeable(token, account, "That profile");
+  const shown = await state.get(shownKey(p));
   return write(
-    [change(profileKey(p), token.value, account), change(ownsKey(token.owner, p), "1", undefined), change(ownsKey(account, p), undefined, "1")],
+    [
+      change(profileKey(p), token.value, account),
+      change(ownsKey(token.owner, p), "1", undefined),
+      change(ownsKey(account, p), undefined, "1"),
+      ...(shown !== undefined ? [change(shownKey(p), shown, undefined)] : []),
+    ],
     paymentFor(token),
   );
 }

@@ -12,7 +12,8 @@
 //   const people = createProfiles({ sdk, chain: ["Nexus", "testnet", "rave"], moniker });
 //   const p = await people.profile(id);                              // { id, owner, name?, avatar?, shown?, handle?, … }
 //   await people.useHandle(id, "@alice", { wallet: window.lattice }); // Moniker points @alice here; the profile names it
-//   await people.writeAs(id, { actions: [{ key: `user/${id}/post/1`, newValue: "…" }] }, { wallet: window.lattice });
+//   const post = { key: `user/${id}/post/${postId}`, newValue: JSON.stringify({ text: "Great tacos", time: Date.now() }) };
+//   await people.writeAs(id, { actions: [post] }, { wallet: window.lattice });   // proof first, then the post
 //
 // Reads go to the first of `nodes` that answers and are checked by CID, so
 // they do not depend on trusting that node. Writes go to the wallet, which
@@ -49,6 +50,8 @@ export function createProfiles(options) {
   return profilesClient(connect({ sdk, chain, nodes, fee, freshFor }), moniker ?? createMoniker({ sdk }));
 }
 
-export { MONIKER_POLICY } from "./records/names.mjs";
-export { isWebURL } from "./records/profiles.mjs";
+// The builders under the clients, over any state view `{ get(key), list(prefix) }`
+// (a client's `state()`), for apps that compose their own writes with `combine`.
+export { claim, MONIKER_POLICY, pointer, pointName, resolve } from "./records/names.mjs";
+export { createProfile, displayName, getProfile, getProfiles, isWebURL, label, profilesOf, proof, setShown, withHandle, writeAs } from "./records/profiles.mjs";
 export { ACCOUNT, combine, isAddress, isHandle, isProfileId } from "./records/shared.mjs";

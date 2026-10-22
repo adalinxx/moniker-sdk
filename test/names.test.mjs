@@ -33,7 +33,7 @@ test("a name is claimed, pointed on several chains, and read with its pointers",
   await assert.rejects(w.moniker.claim("Alice", {}, { wallet }), /lowercase/);
 });
 
-test("a sold name moves alone; the buyer re-points it in the same write", async () => {
+test("a sold name loses its pointers, but the one its buyer sets in the same write", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 1000 });
   await w.moniker.claim("mira", { point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(ALICE) });
   await w.moniker.point("mira", OTHER, P2, { wallet: w.wallet(ALICE) });
@@ -44,18 +44,28 @@ test("a sold name moves alone; the buyer re-points it in the same write", async 
   assert.equal(w.names.coins.get(ALICE), 100n - 3n + 500n);
   const after = await w.moniker.name("mira");
   assert.equal(after.owner, BOB);
-  // The pointer Bob set changed; the other stays until he changes it.
-  assert.deepEqual(after.points, { [OTHER]: P2, [RAVE]: P3 });
+  // No profile keeps showing it: only the pointer Bob set is left.
+  assert.deepEqual(after.points, { [RAVE]: P3 });
   assert.deepEqual(await w.moniker.names(ALICE), []);
   assert.deepEqual((await w.moniker.names(BOB)).map((n) => n.handle), ["mira"]);
 });
 
-test("a name bought pointing nowhere (null) loses every pointer", async () => {
+test("a name bought with no pointer, or null, loses every pointer", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 1000 });
   await w.moniker.claim("mira", { price: 5n, point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(ALICE) });
   await w.moniker.point("mira", OTHER, P2, { wallet: w.wallet(ALICE) });
-  await w.moniker.buy("mira", { point: null }, { wallet: w.wallet(BOB) });
+  await w.moniker.buy("mira", {}, { wallet: w.wallet(BOB) });
   assert.deepEqual((await w.moniker.name("mira")).points, {});
+  await w.moniker.point("mira", RAVE, P1, { wallet: w.wallet(BOB) });
+  await w.moniker.sell("mira", 1n, { wallet: w.wallet(BOB) });
+  await w.moniker.buy("mira", { point: null }, { wallet: w.wallet(ALICE) });
+  assert.deepEqual((await w.moniker.name("mira")).points, {});
+  // Buying it back pointed where it already points keeps that pointer.
+  await w.moniker.point("mira", RAVE, P1, { wallet: w.wallet(ALICE) });
+  await w.moniker.point("mira", OTHER, P2, { wallet: w.wallet(ALICE) });
+  await w.moniker.sell("mira", 1n, { wallet: w.wallet(ALICE) });
+  await w.moniker.buy("mira", { point: { chain: RAVE, profile: P1 } }, { wallet: w.wallet(BOB) });
+  assert.deepEqual((await w.moniker.name("mira")).points, { [RAVE]: P1 });
 });
 
 test("a stale price or a name not for sale is refused, and the buyer pays nothing", async () => {
@@ -125,7 +135,15 @@ test("a name bought by request passes the policy once the wallet fills in the ac
   assert.ok(w.names.submit(BOB, fill(names.acquire("listed", listed), BOB)));
   assert.deepEqual((await w.moniker.names(BOB)).map((n) => n.handle), ["fresh", "listed"]);
   assert.equal(w.names.coins.get(ALICE), 100n - 1n + 7n);
-  assert.equal(await w.moniker.pointer("listed", RAVE), P1, "pointers stay with a sale");
+  assert.deepEqual((await w.moniker.name("listed")).points, {}, "a request deletes the pointers too");
+  // Only a free name or one for sale can be requested.
+  await w.moniker.claim("kept", {}, { wallet: w.wallet(ALICE) });
+  await assert.rejects(w.moniker.buyRequest("kept"), /not for sale/);
+  await w.moniker.offer("kept", BOB, { wallet: w.wallet(ALICE) });
+  await assert.rejects(w.moniker.buyRequest("kept"), /not for sale/);
+  // A signer who already owns the name is refused by the chain.
+  await w.moniker.sell("kept", 3n, { wallet: w.wallet(ALICE) });
+  assert.ok(!w.names.submit(ALICE, fill(names.acquire("kept", await names.resolve(w.names.state, "kept")), ALICE)));
 });
 
 test("an account's own fields are set and removed, by it alone", async () => {

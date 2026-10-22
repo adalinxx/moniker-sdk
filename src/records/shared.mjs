@@ -111,29 +111,50 @@ export const change = (key, oldValue, newValue) => ({ key, ...(oldValue !== unde
 /** A key rewritten to the value it has: shows the policy who holds it. */
 export const unchanged = (key, value) => ({ key, oldValue: value, newValue: value });
 
+// The keys a token's change calls for directly after it: index keys, a
+// name's pointers, a profile's own records.
+const FOLLOWS = /^(owns|names|points|about)\//;
+
 /**
  * One write of several, as one transaction. Each key is written once, where
  * it first comes (the policies read the actions in order): a key rewritten
- * unchanged, to show its value, gives way to a real change of the same key.
- * Two real changes of one key are an error, and so are purchases from one
- * seller split by another's: the policy pays each seller's run of purchases
- * from one credit, and the wallet credits each seller once.
+ * unchanged, to show its value, gives way to a real change of the same key,
+ * and the keys that change calls for (index keys, pointers, the profile's
+ * records) move up with it, so they still follow it directly. Two real
+ * changes of one key are an error. Payments go in the order of the
+ * purchases they pay for, and purchases from one seller split by another's
+ * are an error: the policy pays each seller's run of purchases from one
+ * credit, and the wallet credits each seller once.
  */
 export function combine(...writes) {
-  const at = new Map();
   const kept = [];
-  for (const action of writes.flatMap((w) => w.actions)) {
-    const shows = action.oldValue !== undefined && action.oldValue === action.newValue;
-    const index = at.get(action.key);
-    if (index === undefined) {
-      at.set(action.key, kept.push(action) - 1);
-    } else if (!shows) {
-      const first = kept[index];
-      if (first.oldValue === undefined || first.oldValue !== first.newValue) throw new Error(`${action.key} is changed twice`);
-      kept[index] = action;
+  const changed = []; // each write's real changes, to order its payments
+  for (const w of writes) {
+    let after = -1; // while a moved change's followers come: the last place taken
+    const real = [];
+    for (const action of w.actions) {
+      const shows = action.oldValue !== undefined && action.oldValue === action.newValue;
+      const index = kept.findIndex((a) => a.key === action.key);
+      if (!shows) real.push(action);
+      if (index === -1 && after >= 0 && FOLLOWS.test(action.key)) {
+        kept.splice(++after, 0, action);
+        continue;
+      }
+      after = -1;
+      if (index === -1) {
+        kept.push(action);
+      } else if (!shows) {
+        const first = kept[index];
+        if (first.oldValue === undefined || first.oldValue !== first.newValue) throw new Error(`${action.key} is changed twice`);
+        kept[index] = action;
+        after = index;
+      }
     }
+    changed.push(real);
   }
-  const payments = writes.flatMap((w) => w.payments ?? []);
+  const at = (w) => Math.min(...changed[w].map((action) => kept.indexOf(action)));
+  const order = writes.map((_, w) => w).sort((a, b) => at(a) - at(b) || a - b);
+  const payments = order.flatMap((w) => writes[w].payments ?? []);
   const sellers = payments.map((p) => p.to).filter((to, i, all) => to !== all[i - 1]);
   if (new Set(sellers).size !== sellers.length) throw new Error("purchases from one seller must come together");
   return write(kept, payments);

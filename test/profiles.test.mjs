@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as profiles from "../src/records/profiles.mjs";
-import { combine, isProfileId } from "../src/records/shared.mjs";
+import { change, combine, isProfileId, unchanged, write } from "../src/records/shared.mjs";
 import { address, APP_PATH, world } from "./harness.mjs";
 
 const [ALICE, BOB, CAROL] = [address(1), address(2), address(3)];
@@ -132,14 +132,14 @@ test("a profile offered to an account is taken by it for nothing; a price of 0 o
   await assert.rejects(w.profiles.offer(id, CAROL, { wallet: w.wallet(CAROL) }), /someone else/);
 });
 
-test("a handle bought on Moniker moves alone: the old profile stops showing it when the buyer re-points it", async () => {
+test("a handle bought on Moniker stops showing on the seller's profile at once", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 1000 });
   const { id: mira } = await w.profiles.createProfile({ card: { name: "Mira" } }, { wallet: w.wallet(ALICE) });
   await w.profiles.useHandle(mira, "mira", { wallet: w.wallet(ALICE) });
   await w.moniker.sell("mira", 50n, { wallet: w.wallet(ALICE) });
   const { id: bobs } = await w.profiles.createProfile({ card: { name: "Bob" } }, { wallet: w.wallet(BOB) });
   await w.moniker.buy("mira", {}, { wallet: w.wallet(BOB) });
-  assert.equal((await w.profiles.profile(mira)).handle, "mira", "the pointer stays until the new owner changes it");
+  assert.equal((await w.profiles.profile(mira)).handle, undefined, "the sale deleted the pointer");
   await w.profiles.useHandle(bobs, "mira", { wallet: w.wallet(BOB) });
   assert.equal((await w.profiles.profile(mira)).handle, undefined);
   assert.equal((await w.profiles.profile(bobs)).handle, "mira");
@@ -154,4 +154,51 @@ test("combine puts a profile's proof first and its real change in its place", as
   assert.ok(w.apps.submit(ALICE, both));
   const twice = [await profiles.setProfileTerms(w.apps.state, ALICE, id, { price: 1n }), await profiles.setProfileTerms(w.apps.state, ALICE, id, { price: 2n })];
   assert.throws(() => combine(...twice), /changed twice/);
+});
+
+test("a sold profile stops showing the seller's handle", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 1000 });
+  const { id } = await w.profiles.createProfile({ card: { name: "Tess" } }, { wallet: w.wallet(ALICE) });
+  await w.profiles.useHandle(id, "tess", { wallet: w.wallet(ALICE) });
+  await w.profiles.sell(id, 10n, { wallet: w.wallet(ALICE) });
+  await w.profiles.buy(id, { wallet: w.wallet(BOB) });
+  const now = await w.profiles.profile(id);
+  assert.deepEqual([now.owner, now.shown, now.handle], [BOB, undefined, undefined]);
+  assert.equal(await w.moniker.pointer("tess", APP_PATH), id, "Alice's name still points here, but the profile no longer names it");
+});
+
+const w0 = world();
+
+test("a card name never passes for a handle: leading @s are dropped; the verified handle sits beside it", () => {
+  const id = "abcdefghijklmnop";
+  assert.equal(w0.profiles.label({ id, name: "@alice" }), "alice");
+  assert.equal(w0.profiles.label({ id, name: "@@" }), `Profile …${id.slice(-6)}`);
+  assert.equal(w0.profiles.label({ id, name: "Dana Okafor", handle: "dana" }), "Dana Okafor @dana");
+  assert.equal(w0.profiles.label({ id, name: "@dana", handle: "dana" }), "dana @dana");
+  assert.equal(w0.profiles.label({ id, handle: "dana" }), "@dana");
+  assert.equal(profiles.displayName({ name: "@@x" }), "x");
+});
+
+test("combine keeps a moved token's index keys after it, and pays in purchase order", async () => {
+  const w = world({ [ALICE]: 100, [BOB]: 1000, [CAROL]: 100 });
+  const { id: q } = await w.profiles.createProfile({}, { wallet: w.wallet(ALICE) });
+  const { id: q2 } = await w.profiles.createProfile({}, { wallet: w.wallet(ALICE) });
+  const { id: r } = await w.profiles.createProfile({}, { wallet: w.wallet(CAROL) });
+  await w.profiles.sell(q, 5n, { wallet: w.wallet(ALICE) });
+  await w.profiles.sell(q2, 5n, { wallet: w.wallet(ALICE) });
+  await w.profiles.sell(r, 7n, { wallet: w.wallet(CAROL) });
+  const s = w.apps.state;
+  // A record written as Q comes first; the purchase of Q moves up to its proof, with its owns keys.
+  const writeQ = write([unchanged(profiles.profileKey(q), `${ALICE}@5`), change(`user/${q}/x`, undefined, "1")]);
+  const one = combine(writeQ, await profiles.takeProfile(s, BOB, q));
+  assert.deepEqual(one.actions.map((a) => a.key), [profiles.profileKey(q), profiles.ownsKey(ALICE, q), profiles.ownsKey(BOB, q), `user/${q}/x`]);
+  assert.ok(w.apps.submit(BOB, one));
+  // With R's record first and Q2 bought before R, R's seller is paid first.
+  const writeR = write([unchanged(profiles.profileKey(r), `${CAROL}@7`), change(`user/${r}/x`, undefined, "1")]);
+  const both = combine(writeR, await profiles.takeProfile(s, BOB, q2), await profiles.takeProfile(s, BOB, r));
+  assert.deepEqual(both.actions.map((a) => a.key).slice(0, 4), [profiles.profileKey(r), profiles.ownsKey(CAROL, r), profiles.ownsKey(BOB, r), `user/${r}/x`]);
+  assert.deepEqual(both.payments.map((p) => p.to), [CAROL, ALICE]);
+  assert.ok(w.apps.submit(BOB, both));
+  assert.deepEqual([q, q2, r].map((p) => w.apps.map.get(profiles.profileKey(p))), [BOB, BOB, BOB]);
+  assert.equal(w.apps.map.get(`user/${r}/x`), "1");
 });
