@@ -6,8 +6,8 @@
 //   <moniker-name address="bafyrei…"></moniker-name>
 //   <moniker-name address="bafyrei…" name="Dana Okafor" size="24" plain></moniker-name>   (no link)
 //
-// `name` is your app's own (a card on your chain); leading @s are dropped, so
-// only a verified handle shows with one. Style it from outside with CSS
+// `name` is your app's own (a card on your chain); every @ and invisible
+// control is dropped from it, so only a verified handle shows with an @. Style it from outside with CSS
 // custom properties: --moniker-ink, --moniker-muted, --moniker-accent,
 // --moniker-avatar (the initial's backdrop). Names in a feed share one read
 // of the chain.

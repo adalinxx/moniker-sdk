@@ -117,12 +117,18 @@ export async function getFields(state, account) {
 
 export const getField = (state, account, field) => state.get(fieldKey(account, field));
 
-/** A card name for display, without leading `@`s, which only a verified handle shows; undefined when empty. */
-export const displayName = (name) => (typeof name === "string" ? name.replace(/^@+/, "").trim() : "") || undefined;
+// What a card name may not carry: any @ (and its full-width and small
+// look-alikes), which only a verified handle shows, and the invisible
+// characters that reorder or hide text: bidi and format controls, zero-width
+// characters.
+const UNSHOWN = /[@\uFF20\uFE6B\u200B-\u200F\u202A-\u202E\u2060-\u2069\u061C\uFEFF]/g;
+
+/** A card name for display: no `@` anywhere, no invisible controls, whitespace collapsed; undefined when empty. */
+export const displayName = (name) => (typeof name === "string" ? name.replace(UNSHOWN, "").replace(/\s+/g, " ").trim() : "") || undefined;
 
 /**
- * What to show for an account: a card `name` (an app's own, leading `@`s
- * dropped) with the verified `handle` beside it ("Dana Okafor @dana"), else
+ * What to show for an account: a card `name` (an app's own, as
+ * `displayName` cleans it) with the verified `handle` beside it ("Dana Okafor @dana"), else
  * the handle, else the end of the address.
  */
 export function label(account, { name, handle } = {}) {

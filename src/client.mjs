@@ -75,8 +75,8 @@ export function monikerClient(link, { app }) {
     /** `handleOf` for many accounts, in order, from one state: for a feed. */
     handlesOf: async (addresses) => names.handlesOf(await state(), addresses),
     /**
-     * What to show for an account: `card.name` (your app's, leading `@`s
-     * dropped) with its verified @handle beside it, else the handle, else the
+     * What to show for an account: `card.name` (your app's, with no `@` or
+     * invisible controls) with its verified @handle beside it, else the handle, else the
      * end of the address.
      */
     label: async (address, card) => names.label(address, { name: card?.name, handle: await names.handleOf(await state(), address) }),

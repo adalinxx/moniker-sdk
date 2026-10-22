@@ -39,11 +39,12 @@ const moniker = createMoniker();                  // testnet trial by default; o
 
 await moniker.handleOf(address);                  // "alice", or undefined
 await moniker.handlesOf(addresses);               // a feed's handles, in order, from one read
-await moniker.label(address, card);               // "Alice Ng @alice": your card's name (leading @s dropped) + verified handle
+await moniker.label(address, card);               // "Alice Ng @alice": your card's name (no @ or invisible controls) + verified handle
 ```
 
 `label` falls back to `@alice`, then to the end of the address. A card name
-never shows with an `@`, so only a verified handle looks like one.
+never shows an `@` (or a look-alike), bidi or zero-width characters, so only
+a verified handle looks like one.
 
 ```js
 const wallet = window.lattice;                    // the Lattice Wallet extension
