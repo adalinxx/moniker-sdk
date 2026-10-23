@@ -16,6 +16,7 @@
 // The policy reads a transaction in order: a name, then the index keys it
 // moves (the one it leaves first), then its pointer, which only the name's
 // owner writes. A released name may be followed only by deleting its pointer.
+import { shortAccount } from "./account.mjs";
 import { ACCOUNT, change, checkedTerms, combine, heldToken, isAddress, isHandle, paymentFor, takeable, tokenValue, unchanged, write } from "./shared.mjs";
 
 /** The CID of the Moniker policy module this release reads and writes for; set at each release. */
@@ -131,12 +132,12 @@ export const displayName = (name) => (typeof name === "string" ? name.replace(UN
 /**
  * What to show for an account: a card `name` (an app's own, as
  * `displayName` cleans it) with the verified `handle` beside it ("Dana Okafor @dana"), else
- * the handle, else the end of the address.
+ * the handle, else the account's short ID.
  */
 export function label(account, { name, handle } = {}) {
   const shown = displayName(name);
   const at = handle ? `@${handle}` : undefined;
-  return shown && at ? `${shown} ${at}` : (shown ?? at ?? `…${String(account).slice(-6)}`);
+  return shown && at ? `${shown} ${at}` : (shown ?? at ?? shortAccount(account));
 }
 
 // Writing.

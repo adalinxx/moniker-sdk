@@ -8,17 +8,18 @@
 //
 // `name` is your app's own (a card on your chain); every @ and invisible
 // control is dropped from it, so only a verified handle shows with an @. Style it from outside with CSS
-// custom properties: --moniker-ink, --moniker-muted, --moniker-accent,
-// --moniker-avatar (the initial's backdrop). Names in a feed share one read
-// of the chain.
+// custom properties: --moniker-ink, --moniker-muted and --moniker-accent.
+// The picture is the account's own pattern (accountIcon), the same in every
+// app. Names in a feed share one read of the chain.
 
+import { accountIcon, shortAccount } from "./records/account.mjs";
 import { displayName } from "./records/names.mjs";
 
 const style = `
   :host { display: inline-flex; align-items: center; gap: 0.5em; font: inherit; color: var(--moniker-ink, inherit); min-width: 0; }
   a { display: inline-flex; align-items: center; gap: 0.5em; color: inherit; text-decoration: none; min-width: 0; }
   a:hover .name { text-decoration: underline; }
-  .photo { flex: none; border-radius: 50%; background: var(--moniker-avatar, #cfd6ef); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; color: var(--moniker-muted, #4a4f5a); overflow: hidden; }
+  .photo { flex: none; display: inline-flex; border-radius: 22%; overflow: hidden; }
   .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .handle { color: var(--moniker-accent, #1f3fbf); font-family: ui-monospace, monospace; font-size: 0.9em; white-space: nowrap; }
 `;
@@ -78,10 +79,9 @@ export function defineMonikerName(moniker, tag = "moniker-name") {
             : Object.assign(document.createElement("a"), { href: moniker.pageURL(`@${handle}`), target: "_blank", rel: "noopener" });
         const photo = document.createElement("span");
         photo.className = "photo";
-        photo.style.cssText = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`;
-        photo.textContent = (cardName?.[0] ?? handle?.[0] ?? "?").toUpperCase();
+        photo.innerHTML = accountIcon(address, size);
         photo.setAttribute("aria-hidden", "true");
-        const text = cardName ?? (handle ? `@${handle}` : `…${address.slice(-6)}`);
+        const text = cardName ?? (handle ? `@${handle}` : shortAccount(address));
         outer.append(photo, Object.assign(document.createElement("span"), { className: "name", textContent: text }));
         if (handle && cardName) outer.append(Object.assign(document.createElement("span"), { className: "handle", textContent: `@${handle}` }));
         root.append(outer);

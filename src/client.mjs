@@ -77,7 +77,7 @@ export function monikerClient(link, { app }) {
     /**
      * What to show for an account: `card.name` (your app's, with no `@` or
      * invisible controls) with its verified @handle beside it, else the handle, else the
-     * end of the address.
+     * account's short ID.
      */
     label: async (address, card) => names.label(address, { name: card?.name, handle: await names.handleOf(await state(), address) }),
     /** Names for sale, cheapest first. */

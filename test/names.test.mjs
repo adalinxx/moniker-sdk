@@ -167,8 +167,8 @@ test("labels: a card name never passes for a handle; the verified handle sits be
   assert.equal(await w.moniker.label(ALICE, { name: "Dana Okafor" }), "Dana Okafor @dana");
   assert.equal(await w.moniker.label(ALICE), "@dana");
   assert.equal(await w.moniker.label(BOB, { name: "@dana" }), "dana");
-  assert.equal(await w.moniker.label(BOB, { name: "@@" }), `…${BOB.slice(-6)}`);
-  assert.equal(names.label(BOB), `…${BOB.slice(-6)}`);
+  assert.equal(await w.moniker.label(BOB, { name: "@@" }), `${BOB.slice(7, 11)}…${BOB.slice(-6)}`);
+  assert.equal(names.label(BOB), `${BOB.slice(7, 11)}…${BOB.slice(-6)}`);
   assert.equal(names.displayName("@@x"), "x");
   assert.equal(await w.moniker.label(BOB, { name: "Dana Okafor @dana" }), "Dana Okafor dana");
   assert.equal(names.displayName("Dana\u202E @dana\u200B \uFF20x \uFE6By\u2066z\u2069\u061C\uFEFF\t end"), "Dana dana x yz end");
