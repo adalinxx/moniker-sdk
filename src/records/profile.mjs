@@ -11,10 +11,13 @@
 // parsed as untrusted: what does not parse is left out, never fatal.
 
 /** The CID of the profile policy module built from `policy/`. */
-export const MONIKER_POLICY = "bafyreihbwjt5uuw2se5rcc4hdmbooo7wcixzsfg6geddutb6rgmbzaenxe";
+export const MONIKER_POLICY = "bafyreig2wcsuuuuycdhr4z7f6h7r3szeedqemo6oiy3q6x263gifdfbqza";
 
 /** Where Moniker lives. */
 export const MONIKER_CHAIN = ["Nexus", "moniker"];
+
+/** The most bytes the policy lets a write store under one key. */
+export const MAX_VALUE_BYTES = 16 * 1024;
 
 /** The card's text fields every app shows. A card may carry others; they are kept. */
 export const CARD_FIELDS = ["name", "description", "avatar", "header", "url", "handle"];
@@ -178,6 +181,12 @@ export async function heldBy(state, address) {
 
 const write = (actions, payments = []) => ({ actions, payments });
 
+/** Refuses here, with the reason, a value the policy would refuse. */
+function fits(what, value) {
+  const bytes = value === undefined ? 0 : new TextEncoder().encode(value).length;
+  if (bytes > MAX_VALUE_BYTES) throw new Error(`${what} is too long: ${bytes} bytes, at most ${MAX_VALUE_BYTES}`);
+}
+
 /** One write of several, as one transaction. */
 export const combine = (...writes) =>
   write(
@@ -203,6 +212,7 @@ export async function editCard(state, address, changes) {
     else throw new Error(`${field}: card fields are strings`);
   }
   const newValue = Object.keys(card).length > 0 ? JSON.stringify(card) : undefined;
+  fits("The card", newValue);
   if (newValue === oldValue) return write([]);
   return write([{ key, ...(oldValue !== undefined && { oldValue }), ...(newValue !== undefined && { newValue }) }]);
 }
@@ -222,6 +232,7 @@ export async function setField(state, address, field, value) {
   const key = fieldKey(address, field);
   const oldValue = await state.get(key);
   if (value === oldValue) return write([]);
+  fits(field, value);
   return write([{ key, ...(oldValue !== undefined && { oldValue }), ...(value !== undefined && { newValue: value }) }]);
 }
 
