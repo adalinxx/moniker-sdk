@@ -20,7 +20,7 @@ import { shortAccount } from "./account.mjs";
 import { ACCOUNT, change, checkedTerms, combine, heldToken, isAddress, isHandle, paymentFor, takeable, tokenValue, unchanged, write } from "./shared.mjs";
 
 /** The CID of the Moniker policy module this release reads and writes for; set at each release. */
-export const MONIKER_POLICY = "bafyreihnnbeuihjlw23xswfhduf23xbltsmn37oymwshmenmzsabgv4fzu";
+export const MONIKER_POLICY = "bafyreicybs2dkpihbguywhftikjqbeh566p3zk5visa7bh2wxttdjinfp4";
 
 /**
  * Whether a chain spec (see state.mjs `chainSpec`) runs the Moniker policy.
@@ -153,6 +153,14 @@ async function ownName(state, account, handle) {
 /** The pointer of `handle` changed from `old` to `to` (null or undefined: nowhere), if that changes it. */
 const repoint = (handle, old, to) => (old === (to ?? undefined) ? [] : [change(pointsKey(handle), old, to ?? undefined)]);
 
+/**
+ * The pointer a name's new owner writes, as the policy requires of a name
+ * claimed or taken, so none an owner before left survives: at `to`, else at
+ * the new owner; `null` clears a pointer the chain holds, and where it holds
+ * none, points at the owner too, since a write has to be made.
+ */
+const taken = (handle, old, to, account) => change(pointsKey(handle), old, to === null && old !== undefined ? undefined : (to ?? account));
+
 /** `point` as an account, `true` standing for `account`. */
 const target = (point, account) => (point === true ? account : point == null ? point : checkedAccount(point));
 
@@ -168,8 +176,8 @@ const andShow = async (state, account, handle, w, show) => (show ? combine(w, aw
 
 /**
  * `account` claims the free `handle`, for sale at `price` or not, pointed at
- * account `point` if given (`true`: itself), else nowhere; with `show`, pointed at itself
- * and shown as its handle, in the same transaction.
+ * account `point` if given (`true`: itself), else at itself; with `show`,
+ * pointed at itself and shown as its handle, in the same transaction.
  */
 export async function claim(state, account, handle, { price, point, show = false } = {}) {
   checkedHandle(handle);
@@ -178,8 +186,8 @@ export async function claim(state, account, handle, { price, point, show = false
   const claimed = write([
     change(nameKey(handle), undefined, tokenValue(account, { price })),
     change(namesKey(account, handle), undefined, "1"),
-    // A pointer a release left behind is cleared, unless the claimer sets one.
-    ...repoint(handle, await state.get(pointsKey(handle)), to),
+    // Over any pointer a release left behind.
+    taken(handle, await state.get(pointsKey(handle)), to, account),
   ]);
   return andShow(state, account, handle, claimed, show);
 }
@@ -214,9 +222,10 @@ export async function offerName(state, account, handle, to) {
 /**
  * `account` takes `handle`: bought at the price the chain holds, its owner
  * paid in the same transaction, or taken as offered to it. Its pointer is
- * cleared, so no one keeps showing it, unless `point` sets a new one
- * (an account, or `true` for the buyer); with `show`, pointed at the buyer
- * and shown as its handle, in the same transaction.
+ * cleared, so no one keeps showing it, or where it had none points at the
+ * buyer, unless `point` sets one (an account, or `true` for the buyer); with
+ * `show`, pointed at the buyer and shown as its handle, in the same
+ * transaction.
  */
 export async function buy(state, account, handle, { point = null, show = false } = {}) {
   const entry = await resolve(state, checkedHandle(handle));
@@ -228,7 +237,7 @@ export async function buy(state, account, handle, { point = null, show = false }
       change(nameKey(handle), entry.value, account),
       change(namesKey(entry.owner, handle), "1", undefined),
       change(namesKey(account, handle), undefined, "1"),
-      ...repoint(handle, entry.pointer, target(point, account)),
+      taken(handle, entry.pointer, target(point, account), account),
     ],
     paymentFor(entry),
   );

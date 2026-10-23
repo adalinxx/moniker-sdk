@@ -64,11 +64,11 @@ await moniker.names(address);                     // an account's names
 await moniker.owners(["alice", "@bob"]);          // each name's owner, in order, from one read (undefined when free)
 await moniker.forSale();                          // cheapest first
 
-await moniker.claim("@alice", { point: true }, { wallet });   // point: an address, or true for you
+await moniker.claim("@alice", { point: true }, { wallet });   // point: an address, or true for you (the default)
 await moniker.claim("@alice", { show: true }, { wallet });    // claimed, pointed at you and shown, in one transaction (buy takes show too)
 await moniker.point("@alice", otherAccount, { wallet });      // or null: nowhere
 await moniker.sell("@alice", 500n, { wallet });               // unlist, offer(handle, account)
-await moniker.buy("@alice", { point: true }, { wallet });     // the pointer is cleared unless you set one
+await moniker.buy("@alice", { point: true }, { wallet });     // the seller's pointer is cleared unless you set one
 await moniker.release("@alice", { wallet });                  // and deletes its pointer
 ```
 
@@ -97,6 +97,12 @@ client's `state()`): `claim`, `pointName`, `buy`, `release`, `acquire`,
 it: each key changes once, where it first comes, an unchanged rewrite giving
 way to a real change of the same key (its index keys and pointer moving up
 with it), and purchases from one seller together.
+
+The policy is fixed at genesis, and these builders refuse what it would
+refuse, with the reason, before anything is sent: a key over 512 bytes (a
+handle over 446 characters), a value over 16 KiB, or two claims in one
+write. A name that comes to a new owner is always pointed by it in the same
+transaction, so no earlier owner's pointer survives.
 
 ## The byline element
 
