@@ -1,12 +1,13 @@
 {
   "name": "moniker-sdk",
-  "version": "0.1.2",
-  "description": "Moniker profiles and handles for Lattice dApps",
+  "version": "0.3.0",
+  "description": "Moniker @names for Lattice dApps",
   "type": "module",
   "exports": {
     ".": "./src/index.mjs",
     "./browser": "./src/browser.mjs",
-    "./element": "./src/element.mjs"
+    "./element": "./src/element.mjs",
+    "./picker": "./src/picker.mjs"
   },
   "files": [
     "src",

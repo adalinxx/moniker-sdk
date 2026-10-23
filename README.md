@@ -1,99 +1,153 @@
 # moniker-sdk
 
-Moniker profiles and names for any Lattice dApp. [Moniker](https://github.com/adalinxx/moniker)
-is the one profile chain every Lattice app shares:
+@names for any Lattice dApp, from [Moniker](https://github.com/adalinxx/moniker),
+the names chain every app shares.
 
 - An **account** is a key. It is never shown, only checked.
-- A **profile** is the public identity: a card (name, bio, photo, links) and
-  a default name. An account owns profiles; a profile can be sold or given
-  whole, with its card and followers, and moved to a new key if one is lost.
-- A **name** (`@alice`) is an asset an account owns, like a domain: its owner
-  points it at any profile, sells it or gives it. A profile shows its default
-  name only while that name points at it.
+- A **name** (`@alice`) is an asset an account owns, like a domain: it sells
+  it, gives it, and points it at an account, any account.
+- An account **shows** `@alice`, in every app, only while it names `alice`
+  (`user/<account>/name` on Moniker) **and** `alice` is held and points at
+  it. All of it lives on Moniker, so one state decides; your app needs nothing on its own chain
+  for handles.
 
-A record your app writes says which profile it is from, and your app shows
-that profile. One import, no key handling: reads come from Moniker's nodes and
-are checked by CID; writes go to the person's Lattice Wallet, which shows and
-signs them.
+Your app keeps its own records, cards included, on its own chain, keyed by
+account. Reads come from Moniker's nodes and are checked by CID; writes go to
+the person's Lattice Wallet, which shows and signs them. No key handling here.
 
 ## Install
 
 Import a release, never a branch: code your users run should change only when
 you choose to upgrade. A tag through jsDelivr's GitHub mirror is fixed
-(`@v0.2.0`; a commit hash pins harder still):
+(`@v0.3.0`; a commit hash pins harder still):
 
 ```js
-import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.2.0/src/browser.mjs";
+import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.3.0/src/browser.mjs";
 ```
 
-Or with npm, from the tag: `npm install github:adalinxx/moniker-sdk#v0.2.0`,
+Or with npm, from the tag: `npm install github:adalinxx/moniker-sdk#v0.3.0`,
 then `import { createMoniker } from "moniker-sdk/browser"`. Vendoring a copy
 of `src/` and `vendor/` works too; review upgrades like any dependency.
-
-## Use
-
-```js
-const moniker = createMoniker();                    // testnet trial by default; or { nodes, chain }
-const p = await moniker.profile(id);                // { id, owner, handle?, name?, description?, avatar?, url?, links? }
-const people = await moniker.profiles(ids);         // a feed's bylines, in order, from one read
-const q = await moniker.profileOf("@alice");        // the profile a name points at, or undefined
-const n = await moniker.name("@alice");             // { handle, owner, price?, offer?, profile? }
-const mine = await moniker.profilesOf(address);     // an account's profiles
-img.src = await moniker.photo(p.avatar);            // an object URL, or null
-moniker.label(p);                                   // name, else @handle, else the end of the profile id
-moniker.pageURL(`@${p.handle}`);                    // its Moniker page (or by id, which survives renames)
-
-const wallet = window.lattice;                      // the Lattice Wallet extension
-const { id } = await moniker.createProfile({ card: { name: "Alice" }, handle: "alice" }, { wallet });
-await moniker.save(id, { links: [{ label: "Site", url: "https://alice.example" }] }, { wallet });
-await moniker.claim("@alice_art", { point: id }, { wallet }); // a name of your own, pointed at the profile
-await moniker.point("@alice_art", otherId, { wallet });       // point it elsewhere (anyone's profile)
-await moniker.showName(id, "@alice_art", { wallet });         // the profile's default name: one pointing at it
-await moniker.setAdmin(id, otherAccount, true, { wallet }); // may post as the profile in apps
-// names: sell, unlist, offer (to an account), buy (with { point }), release · profiles: sellProfile, takeProfile
-
-defineMonikerName(moniker);                         // <moniker-name profile="…" size="24"></moniker-name>
-```
-
-A name can be bought with no address, by any wallet, as a `lattice://write`
-request: the wallet fills in the account the person chooses, which then
-points the name at a profile.
-
-```js
-const uri = await moniker.buyRequest("rae");     // lattice://write?v=1&intent=…, valid 15 minutes
-await window.lattice.openRequest(uri);           // from a click; or show `uri` as a QR code or text
-```
-
-Writes are free on the testnet trial: its nodes admit transactions with no
-fee, so a new account needs no coins to make a profile or claim a name. Pass
-`createMoniker({ fee })` for nodes that want one.
-
-`save` keeps card fields it does not know and retries when another app saved
-the card first. Keep your app's own per-account data in fields named
-`app.<your app>.*` (`setField`).
-
-A gift is an offer: `offer("@alice", profileId)` lets that profile's owner
-take the name for nothing, and `sellProfile(id, { offer: address })` does the
-same for a whole profile. Nothing is put on someone's profile or account
-without their signature.
-
-`<moniker-name>` shows a profile's photo, name and `@handle`, linked to its page
-(`plain` drops the link); restyle it with `--moniker-ink`, `--moniker-muted`,
-`--moniker-accent` and `--moniker-avatar`. See [`demo.html`](demo.html), live at
-https://adalinxx.github.io/moniker-sdk/demo.html.
 
 In Node or with your own copy of the Lattice SDK, import `moniker-sdk` (that
 is, `src/index.mjs`) and pass it: `createMoniker({ sdk })`.
 
+## Showing handles
+
+```js
+const moniker = createMoniker();                  // testnet trial by default; or { nodes, chain, fee }
+
+await moniker.handleOf(address);                  // "alice", or undefined
+await moniker.handlesOf(addresses);               // a feed's handles, in order, from one read
+await moniker.label(address, card);               // "Alice Ng @alice": your card's name (no @ or invisible controls) + verified handle
+```
+
+`label` falls back to `@alice`, then to the end of the address. A card name
+never shows an `@` (or a look-alike), bidi or zero-width characters, so only
+a verified handle looks like one.
+
+```js
+const wallet = window.lattice;                    // the Lattice Wallet extension
+await moniker.showName("@alice", { wallet });     // one transaction: names it, and points it at you if it's yours and points elsewhere
+await moniker.stopShowing({ wallet });
+```
+
+`showName` works for a name someone else owns while it points at you;
+someone pointing a name at you shows nothing until you name it.
+
+## Names
+
+```js
+await moniker.name("@alice");                     // { handle, owner, price?, offer?, pointer? }, or undefined
+await moniker.pointer("@alice");                  // the account it points at
+await moniker.names(address);                     // an account's names
+await moniker.owners(["alice", "@bob"]);          // each name's owner, in order, from one read (undefined when free)
+await moniker.forSale();                          // cheapest first
+
+await moniker.claim("@alice", { point: true }, { wallet });   // point: an address, or true for you
+await moniker.claim("@alice", { show: true }, { wallet });    // claimed, pointed at you and shown, in one transaction (buy takes show too)
+await moniker.point("@alice", otherAccount, { wallet });      // or null: nowhere
+await moniker.sell("@alice", 500n, { wallet });               // unlist, offer(handle, account)
+await moniker.buy("@alice", { point: true }, { wallet });     // the pointer is cleared unless you set one
+await moniker.release("@alice", { wallet });                  // and deletes its pointer
+```
+
+A sale clears the name's pointer, so the seller stops showing it at once.
+Releasing deletes the pointer when done through this SDK; the policy only
+allows deleting it, not requires it, so `claim` and `buy` clear any pointer a
+release left behind unless you set one.
+`field` and `setField` keep an account's own values, such as `key.x25519` or
+`app.<your app>.<field>`.
+
+A name can be bought with no address, by any wallet, as a `lattice://write`
+request: the wallet fills in the account the person chooses, and the name
+points at it. Only a free name or one for sale can be requested; a signer who
+already owns it is refused by the chain.
+
+```js
+const uri = await moniker.buyRequest("rae");      // lattice://write?v=1&intent=…, valid 15 minutes
+await window.lattice.openRequest(uri);            // from a click; or show `uri` as a QR code or text
+```
+
+The builders under the client are exported too, over any state view (the
+client's `state()`): `claim`, `pointName`, `buy`, `release`, `acquire`,
+`showName`, `stopShowing`, `resolve`, `ownersOf`, `pointer`, `handleOf`, `handlesOf`,
+`label`, `displayName`. Each write returns `{ actions, payments }`;
+`combine(...writes)` joins them into one transaction the way the policy reads
+it: each key changes once, where it first comes, an unchanged rewrite giving
+way to a real change of the same key (its index keys and pointer moving up
+with it), and purchases from one seller together.
+
+## The byline element
+
+```js
+defineMonikerName(moniker);   // <moniker-name address="bafyrei…" name="Alice Ng" size="24"></moniker-name>
+```
+
+`<moniker-name>` shows the `name` your app knows the account by and its
+verified `@handle`, the handle linked to its Moniker page (`plain` drops the
+link); restyle it with `--moniker-ink`, `--moniker-muted`, `--moniker-accent`
+and `--moniker-avatar`. See [`demo.html`](demo.html).
+
+## The handle picker
+
+```js
+defineHandlePicker(moniker);   // <moniker-handle-picker></moniker-handle-picker>
+const handle = await document.querySelector("moniker-handle-picker").open();   // from a click
+```
+
+`<moniker-handle-picker>` lets someone choose the `@handle` they show in
+every app without leaving yours. Its dialog lists the names the account
+connected in Selfhold owns on Moniker, and offers to claim a free one: a free
+name is claimed, pointed at the account and shown in one transaction; a name
+the account owns, or one pointed at it, is shown. Someone else's name is
+refused before the wallet is asked, saying whether it is for sale. Writes go
+only from the account the names were listed for.
+
+`open()` resolves to the handle once Moniker shows it, about a block after the
+wallet sends it, or to `undefined` if the dialog is closed first. The element
+fires `moniker:sent` (`{ account, handle }`) when the wallet has sent it, so
+your page can show it as saving, and `moniker:shown` when Moniker shows it.
+Pass `defineHandlePicker(moniker, { tag, wallet, app })` to rename the tag,
+use another wallet than `window.lattice`, or link another Moniker app.
+Restyle it with `--moniker-ink`, `--moniker-muted`, `--moniker-accent`,
+`--moniker-accent-ink`, `--moniker-line`, `--moniker-surface` and
+`--moniker-bad`.
+
+Writes are free on the testnet trial: its nodes admit transactions with no
+fee. Pass `createMoniker({ fee })` for nodes that want one.
+
 ## Layout
 
-- `src/index.mjs`: `createMoniker` and the address and handle checks.
+- `src/index.mjs`: `createMoniker`, the builders and the checks.
 - `src/browser.mjs`: the same, bound to the vendored Lattice SDK.
+- `src/client.mjs`: the client, over a link to Moniker.
 - `src/element.mjs`: `<moniker-name>`.
-- `src/records/`: reading and writing Moniker's records: `profile.mjs`
-  (profiles, cards, names, admins, account fields), `state.mjs` (reads state by descending the trie, checked
-  by CID), `wallet.mjs` (the request the Lattice Wallet signs). The one copy:
-  the Moniker app and its tests use these through a submodule.
+- `src/picker.mjs`: `<moniker-handle-picker>`.
+- `src/records/`: `names.mjs` (Moniker's records, as pure builders over a
+  state view), `shared.mjs` (tokens, `combine`, checks), `state.mjs` (reads
+  state by descending the trie, checked by CID), `wallet.mjs` (the request
+  the Lattice Wallet signs).
 - `vendor/lattice-sdk.js`: the Lattice SDK, bundled for browsers.
 
 ## Test
@@ -102,6 +156,8 @@ is, `src/index.mjs`) and pass it: `createMoniker({ sdk })`.
 npm test
 ```
 
-The Moniker repo holds this one as the submodule `sdk/`: its policy tests check
-`src/records/` against the chain's policy, and its e2e runs the whole library
-against a real node. To try a change here there, check it out in `sdk/`.
+The tests run every write against the real built Moniker policy
+(`$MONIKER_WASM`, default `~/src/moniker-follows/policy/target/…/moniker_policy.wasm`;
+build it with `cargo build --release --target wasm32-unknown-unknown` in that
+`policy/`), and point `LATTICE_SDK` at the Lattice SDK's
+`packages/sdk/dist/index.js` if it is not in `~/src/lattice-sdk`.

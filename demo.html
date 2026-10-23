@@ -15,26 +15,27 @@
 <body>
 <main>
   <h1>Moniker in your app</h1>
-  <p>A byline from Moniker, as a feed would show it:</p>
+  <p>A byline: the name your app knows an account by, and its handle, verified on Moniker:</p>
   <div class="post" id="post"><p>Hello from a post.</p></div>
   <p>The code:</p>
-  <pre>import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.1.2/src/browser.mjs";
+  <pre>import { createMoniker, defineMonikerName } from "https://cdn.jsdelivr.net/gh/adalinxx/moniker-sdk@v0.3.0/src/browser.mjs";
 const moniker = createMoniker();
 defineMonikerName(moniker);
-// &lt;moniker-name profile="…"&gt;&lt;/moniker-name&gt;</pre>
+// &lt;moniker-name address="…" name="…"&gt;&lt;/moniker-name&gt;</pre>
 </main>
 <script type="module">
   import { createMoniker, defineMonikerName } from "./src/browser.mjs";
-  // ?profile=…&node=…&chain=… for trying it against another chain.
+  // ?address=… or ?handle=…, ?name=…, and ?node=… / ?chain=… for trying another chain.
   const query = new URLSearchParams(location.search);
   const moniker = createMoniker({
     ...(query.get("node") && { nodes: [query.get("node")] }),
     ...(query.get("chain") && { chain: query.get("chain").split("/") }),
   });
   defineMonikerName(moniker);
-  const id = query.get("profile") ?? (await moniker.resolve("moniker"));
+  const address = query.get("address") ?? (await moniker.pointer(query.get("handle") ?? "moniker").catch(() => undefined));
   const byline = document.createElement("moniker-name");
-  byline.setAttribute("profile", id ?? "");
+  byline.setAttribute("address", address ?? "");
+  if (query.get("name")) byline.setAttribute("name", query.get("name"));
   document.getElementById("post").prepend(byline);
 </script>
 </body>

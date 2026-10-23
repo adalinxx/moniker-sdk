@@ -120,7 +120,7 @@ export async function tip(sdk, nodeURL, chainPath, volumes) {
   return { hash, generalStateCID: state.generalStateCID, specCID: block.specCID };
 }
 
-/** The state at one root as `{ get(key), list(prefix) }`, which the profile reads take. */
+/** The state at one root as `{ get(key), list(prefix) }`, which the name reads take. */
 export const view = (load, rootCID) => ({
   get: (key) => get(load, rootCID, key),
   list: (prefix) => list(load, rootCID, prefix),
