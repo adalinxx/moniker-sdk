@@ -42,7 +42,7 @@ await moniker.handlesOf(addresses);               // a feed's handles, in order,
 await moniker.label(address, card);               // "Alice Ng @alice": your card's name (no @ or invisible controls) + verified handle
 ```
 
-`label` falls back to `@alice`, then to the end of the address. A card name
+`label` falls back to `@alice`, then to the account's short ID. A card name
 never shows an `@` (or a look-alike), bidi or zero-width characters, so only
 a verified handle looks like one.
 
@@ -106,8 +106,22 @@ defineMonikerName(moniker);   // <moniker-name address="bafyrei…" name="Alice 
 
 `<moniker-name>` shows the `name` your app knows the account by and its
 verified `@handle`, the handle linked to its Moniker page (`plain` drops the
-link); restyle it with `--moniker-ink`, `--moniker-muted`, `--moniker-accent`
-and `--moniker-avatar`. See [`demo.html`](demo.html).
+link), beside the account's own pattern; restyle it with `--moniker-ink`,
+`--moniker-muted` and `--moniker-accent`. See [`demo.html`](demo.html).
+
+## Showing an account
+
+```js
+shortAccount(address);      // "bc6g…mbbt6a": both ends of the ID, past the "bafyrei" every ID shares
+accountIcon(address, 24);   // SVG markup: a pattern drawn from the middle of the ID, the same in every app
+```
+
+Every account ID starts with `bafyrei`, as every block and transaction ID
+does, so the short form drops it. Show the pattern beside an account wherever
+it appears, so people learn to recognize it; the pattern is drawn from the
+part of the ID the short form hides, so an ID made to share both ends with
+another still looks different. Short forms are for recognizing: where people
+check who owns what, show the whole ID.
 
 ## The handle picker
 

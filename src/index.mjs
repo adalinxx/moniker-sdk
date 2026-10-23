@@ -56,3 +56,4 @@ export {
   stopShowing,
 } from "./records/names.mjs";
 export { ACCOUNT, combine, isAddress, isHandle } from "./records/shared.mjs";
+export { accountIcon, shortAccount } from "./records/account.mjs";
