@@ -35,7 +35,7 @@ is, `src/index.mjs`) and pass it: `createMoniker({ sdk })`.
 ## Showing handles
 
 ```js
-const moniker = createMoniker();                  // testnet trial by default; or { nodes, chain, fee }
+const moniker = createMoniker();                  // Nexus/moniker by default; or { nodes, chain }
 
 await moniker.handleOf(address);                  // "alice", or undefined
 await moniker.handlesOf(addresses);               // a feed's handles, in order, from one read
@@ -154,8 +154,10 @@ Restyle it with `--moniker-ink`, `--moniker-muted`, `--moniker-accent`,
 `--moniker-accent-ink`, `--moniker-line`, `--moniker-surface` and
 `--moniker-bad`.
 
-Writes are free on the testnet trial: its nodes admit transactions with no
-fee. Pass `createMoniker({ fee })` for nodes that want one.
+The fee is the wallet's: a write asks for none, and the person's wallet
+pays the fee they set there for the chain (in Selfhold, under Fee). A fee is
+relay policy, never consensus: each node reports the least it relays as
+`minRelayFee` in `/api/chain/info`, and Selfhold warns when a fee is below it.
 
 ## Layout
 

@@ -1,16 +1,18 @@
 // Apps keep no key: every write goes to the person's Lattice wallet
 // through `window.lattice.writeRecords`, which shows it, picks the nonce,
-// signs with the connected account and sends it. The wallet debits that
-// account for the payments plus the fee and credits each payee, the same
-// body `transaction` below builds.
+// signs with the connected account and sends it. The fee is the wallet's:
+// the person sets it there, per chain, unless a request proposes one. The
+// wallet debits that account for the payments plus the fee and credits each
+// payee, the same body `transaction` below builds.
 
 /**
  * The wallet request for `actions` on `chainPath`, paying `payments`
  * (`{ to, amount }`, as names.mjs `buy` returns them) from the connected
  * account. The wallet takes each payee once, so payments to one payee are
- * added together.
+ * added together. Without `fee` the wallet uses the person's own; a `fee`
+ * given is proposed, and the wallet shows it for approval.
  */
-export function writeRequest(chainPath, { actions, payments = [] }, fee = 1n) {
+export function writeRequest(chainPath, { actions, payments = [] }, fee) {
   if (actions.length === 0) throw new Error("Nothing to write");
   const credits = new Map();
   for (const { to, amount } of payments) credits.set(to, (credits.get(to) ?? 0n) + amount);
@@ -18,7 +20,7 @@ export function writeRequest(chainPath, { actions, payments = [] }, fee = 1n) {
     chainPath: [...chainPath],
     actions,
     ...(credits.size > 0 && { payments: [...credits].map(([to, amount]) => ({ to, amount: String(amount) })) }),
-    fee: String(fee),
+    ...(fee !== undefined && { fee: String(fee) }),
   };
 }
 
@@ -31,8 +33,7 @@ export function writeRequest(chainPath, { actions, payments = [] }, fee = 1n) {
  * browser with `lattice.openRequest(uri)`, or show it as text or a QR code.
  */
 export function writeRequestURI(chainPath, write, { fee, label, expiresAt = new Date(Date.now() + 15 * 60_000) } = {}) {
-  const { fee: _, ...request } = writeRequest(chainPath, write);
-  const intent = { version: 1, ...request, ...(fee !== undefined && { fee: String(fee) }), expiresAt: expiresAt.toISOString(), ...(label && { label }) };
+  const intent = { version: 1, ...writeRequest(chainPath, write, fee), expiresAt: expiresAt.toISOString(), ...(label && { label }) };
   const bytes = new TextEncoder().encode(JSON.stringify(intent));
   const base64 = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
   return `lattice://write?v=1&intent=${base64.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`;

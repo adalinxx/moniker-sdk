@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { acquire } from "../src/records/names.mjs";
 import { ACCOUNT, tokenValue } from "../src/records/shared.mjs";
-import { writeRequestURI } from "../src/records/wallet.mjs";
+import { writeRequest, writeRequestURI } from "../src/records/wallet.mjs";
 
 const owner = "bafyreibc6ggvvnkjlyjghue3qxnagcoprbsh725cutnnnkt3t6dambbt6a";
 const intent = (uri) => {
@@ -55,4 +55,10 @@ test("a write becomes a lattice://write request: no address, no nonce, an expiry
   assert.equal(later.actions[0].newValue, "é ✓", "UTF-8 text survives");
   assert.equal(later.fee, undefined, "no fee: the wallet chooses");
   assert.ok(Date.parse(later.expiresAt) - Date.now() > 14 * 60_000, "15 minutes by default");
+});
+
+test("a write asks for no fee: the wallet sets it, unless one is proposed", () => {
+  const write = { actions: [{ key: "user/a/name", newValue: "ada" }] };
+  assert.equal("fee" in writeRequest(["Nexus", "moniker"], write), false);
+  assert.equal(writeRequest(["Nexus", "moniker"], write, 3n).fee, "3");
 });

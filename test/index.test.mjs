@@ -10,10 +10,11 @@ test("needs the SDK", () => {
   assert.throws(() => createMoniker({}), /needs \{ sdk \}/);
 });
 
-test("Moniker defaults to the testnet trial chain and its shared hosts", () => {
+test("Moniker defaults to Nexus/moniker and its hosts, and proposes no fee", () => {
   const moniker = createMoniker({ sdk });
-  assert.deepEqual(moniker.chain, DEFAULTS.chain);
+  assert.deepEqual(moniker.chain, ["Nexus", "moniker"]);
   assert.deepEqual(moniker.nodes, DEFAULTS.nodes);
+  assert.equal("fee" in DEFAULTS, false);
 });
 
 test("links to the Moniker app", () => {

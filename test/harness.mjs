@@ -87,7 +87,7 @@ function chain(module, path, balances) {
     }
     return true;
   }
-  const link = { chain: path, nodes: [], fee: 1n, state: async () => state };
+  const link = { chain: path, nodes: [], state: async () => state };
   return { path, state, submit, map, coins, link };
 }
 
@@ -101,7 +101,8 @@ export function world(balances = {}) {
     address: async () => who,
     writeRecords: async ({ chainPath, actions, payments = [], fee }) => {
       if (chainPath.join("/") !== MONIKER_PATH.join("/")) throw new Error(`no chain ${chainPath.join("/")}`);
-      const landed = names.submit(who, { actions, payments: payments.map(({ to, amount }) => ({ to, amount: BigInt(amount) })) }, BigInt(fee));
+      // As Selfhold: a request without a fee pays the person's default, 1.
+      const landed = names.submit(who, { actions, payments: payments.map(({ to, amount }) => ({ to, amount: BigInt(amount) })) }, BigInt(fee ?? 1n));
       if (!landed) throw new Error("refused");
       return { transactionCID: "bafytest" };
     },
