@@ -1,38 +1,88 @@
 // The client createMoniker returns, over a link to Moniker:
-// `{ chain, nodes, state({ fresh }) }`, as `connect` makes it. Reads take
-// the chain's state at a node's tip; writes go to the person's wallet, which
-// shows them, sets the fee, signs and sends; nothing here holds a key.
+// `{ chain, nodes, hosts(), state({ fresh }) }`, as `connect` makes it. Reads
+// take the chain's state at a host's tip; writes go to the person's wallet,
+// which shows them, sets the fee, signs and sends; nothing here holds a key.
 import * as names from "./records/names.mjs";
 import { anyHost, tip, view, volumeLoader } from "./records/state.mjs";
 import { writeRequest, writeRequestURI } from "./records/wallet.mjs";
 
-/** A link to `chain` through `nodes`, with the Lattice SDK module `sdk`. */
-export function connect({ sdk, chain, nodes, freshFor }) {
-  const volumes = new sdk.VolumeClient(anyHost(nodes.map((node) => new sdk.HTTPVolumeTransport(`${node}/volumes`, { chainPath: chain }))));
-  const load = volumeLoader(volumes, sdk.decodeDagCbor);
+/**
+ * The hosts Nexus lists for `chain`, asked of each of `seeds` (Nexus nodes)
+ * in turn: the first that lists any, as https origins. A host announces
+ * itself, so a listing is not proof it serves the chain: reads still check
+ * every Volume by CID, but trust the tip of whichever host answers.
+ */
+export async function discover(chain, seeds) {
+  let failure;
+  for (const seed of seeds) {
+    try {
+      const url = new URL("/api/chain/endpoints", seed);
+      url.searchParams.set("chainPath", chain.join("/"));
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`endpoints: HTTP ${response.status}`);
+      const { endpoints } = await response.json();
+      const hosts = [...new Set((Array.isArray(endpoints) ? endpoints : []).flatMap(httpsOrigin))];
+      if (hosts.length) return hosts;
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw new Error(`Nexus lists no host for ${chain.join("/")}`, { cause: failure });
+}
+/** `url`'s origin, in a list, when it is https; else nothing. */
+function httpsOrigin(url) {
+  try {
+    const { protocol, origin } = new URL(url);
+    return protocol === "https:" ? [origin] : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * A link to `chain`, with the Lattice SDK module `sdk`: through `nodes` when
+ * named, else through the hosts Nexus lists, found from `seeds`.
+ */
+export function connect({ sdk, chain, nodes, seeds, freshFor }) {
+  let reach = null; // Promise<{ hosts, volumes, load }>
+  /** The hosts to read from, found once and again after none of them answers. */
+  function hosts() {
+    reach ??= (async () => {
+      const found = nodes ?? (await discover(chain, seeds));
+      const volumes = new sdk.VolumeClient(anyHost(found.map((host) => new sdk.HTTPVolumeTransport(`${host}/volumes`, { chainPath: chain }))));
+      return { hosts: found, volumes, load: volumeLoader(volumes, sdk.decodeDagCbor) };
+    })();
+    const finding = reach;
+    finding.catch(() => reach === finding && (reach = null));
+    return finding;
+  }
 
   let current = null; // { at, state: Promise }
-  /** The chain's state at the tip of the first node that answers, reused for `freshFor` ms. */
+  /** The chain's state at the tip of the first host that answers, reused for `freshFor` ms. */
   function state({ fresh = false } = {}) {
     if (!fresh && current && Date.now() - current.at < freshFor) return current.state;
     const read = (async () => {
+      const finding = hosts();
+      const reached = await finding;
       let failure;
-      for (const node of nodes) {
+      for (const host of reached.hosts) {
         try {
-          const { generalStateCID } = await tip(sdk, node, chain, volumes);
-          return view(load, generalStateCID);
+          const { generalStateCID } = await tip(sdk, host, chain, reached.volumes);
+          return view(reached.load, generalStateCID);
         } catch (error) {
           failure = error;
         }
       }
-      throw new Error(`No node is serving ${chain.join("/")}`, { cause: failure });
+      // The listed hosts may have moved: ask Nexus again next time.
+      if (!nodes && reach === finding) reach = null;
+      throw new Error(`No host is serving ${chain.join("/")}`, { cause: failure });
     })();
     current = { at: Date.now(), state: read };
     read.catch(() => current?.state === read && (current = null));
     return read;
   }
 
-  return { chain, nodes, state };
+  return { chain, nodes, hosts: async () => (await hosts()).hosts, state };
 }
 
 const needWallet = (wallet) => {
@@ -58,6 +108,8 @@ export function monikerClient(link, { app }) {
   return {
     chain: link.chain,
     nodes: link.nodes,
+    /** The hosts reads go to: `nodes` when named, else those Nexus lists. */
+    hosts: link.hosts,
     state,
 
     // ---- reading
