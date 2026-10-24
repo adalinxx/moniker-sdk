@@ -87,7 +87,24 @@ export function takeable(token, account, what) {
 export const write = (actions, payments = []) => ({ actions, payments });
 
 /** One key's change from what was read to `newValue` (undefined deletes it). */
-export const change = (key, oldValue, newValue) => ({ key, ...(oldValue !== undefined && { oldValue }), ...(newValue !== undefined && { newValue }) });
+/** The most bytes the policy lets a key have, and a write store under one. */
+export const MAX_KEY_BYTES = 512;
+export const MAX_VALUE_BYTES = 16 * 1024;
+
+const bytes = (text) => new TextEncoder().encode(text).length;
+
+/** Refuses here, with the reason, a key or value the policy would refuse. */
+function fits(key, value) {
+  if (bytes(key) > MAX_KEY_BYTES) throw new Error(`${key.slice(0, 40)}…: a key is at most ${MAX_KEY_BYTES} bytes`);
+  if (value !== undefined && bytes(value) > MAX_VALUE_BYTES) {
+    throw new Error(`${key}: ${bytes(value)} bytes is too long, at most ${MAX_VALUE_BYTES}`);
+  }
+}
+
+export const change = (key, oldValue, newValue) => {
+  fits(key, newValue);
+  return { key, ...(oldValue !== undefined && { oldValue }), ...(newValue !== undefined && { newValue }) };
+};
 
 /** A key rewritten to the value it has: shows the policy who holds it. */
 export const unchanged = (key, value) => ({ key, oldValue: value, newValue: value });
@@ -138,5 +155,9 @@ export function combine(...writes) {
   const payments = order.flatMap((w) => writes[w].payments ?? []);
   const sellers = payments.map((p) => p.to).filter((to, i, all) => to !== all[i - 1]);
   if (new Set(sellers).size !== sellers.length) throw new Error("purchases from one seller must come together");
+  // The policy lets a transaction claim one free name.
+  if (kept.filter((a) => a.key.startsWith("name/") && a.oldValue === undefined && a.newValue !== undefined).length > 1) {
+    throw new Error("one write claims at most one name");
+  }
   return write(kept, payments);
 }

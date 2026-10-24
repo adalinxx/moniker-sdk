@@ -96,18 +96,25 @@ test("a released name goes with its pointer, and is free again", async () => {
   assert.ok(!w.names.submit(BOB, { actions: releaseAndPoint }));
 });
 
-test("a claim clears a pointer a hand-built release left behind, unless the claimer sets one", async () => {
+test("a claim replaces a pointer a hand-built release left behind, or clears it", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 100 });
   await w.moniker.claim("left", { show: true }, { wallet: w.wallet(ALICE) });
   // Released by hand, keeping the pointer: the policy allows it, but a free name shows for nobody.
   assert.ok(w.names.submit(ALICE, { actions: [change("name/left", ALICE, undefined), change(names.namesKey(ALICE, "left"), "1", undefined)] }));
   assert.equal(await w.moniker.pointer("left"), ALICE);
   assert.equal(await w.moniker.handleOf(ALICE), undefined);
+  // The claimer's own pointer replaces it; a claim leaving it there is refused.
   await w.moniker.claim("left", {}, { wallet: w.wallet(BOB) });
-  assert.equal(await w.moniker.pointer("left"), undefined);
+  assert.equal(await w.moniker.pointer("left"), BOB);
   assert.equal(await w.moniker.handleOf(ALICE), undefined);
+  assert.ok(w.names.submit(BOB, { actions: [change("name/left", BOB, undefined), change(names.namesKey(BOB, "left"), "1", undefined)] }));
+  assert.ok(!w.names.submit(ALICE, { actions: [change("name/left", undefined, ALICE), change(names.namesKey(ALICE, "left"), undefined, "1")] }));
+  // Or cleared.
+  await w.moniker.claim("left", { point: null }, { wallet: w.wallet(ALICE) });
+  assert.equal(await w.moniker.pointer("left"), undefined);
+  assert.ok(w.names.submit(ALICE, { actions: [change("name/left", ALICE, undefined), change(names.namesKey(ALICE, "left"), "1", undefined)] }));
   // Left behind again, and replaced by the claimer's own pointer.
-  await w.moniker.point("left", ALICE, { wallet: w.wallet(BOB) });
+  await w.moniker.claim("left", { point: ALICE }, { wallet: w.wallet(BOB) });
   assert.ok(w.names.submit(BOB, { actions: [change("name/left", BOB, undefined), change(names.namesKey(BOB, "left"), "1", undefined)] }));
   await w.moniker.claim("left", { point: true }, { wallet: w.wallet(BOB) });
   assert.equal(await w.moniker.pointer("left"), BOB);
@@ -223,7 +230,7 @@ test("an account's own fields are set and removed, by it alone", async () => {
 test("combine keeps each key where it first comes, moves a token's index keys and pointer with it, and pays in purchase order", async () => {
   const w = world({ [ALICE]: 100, [BOB]: 1000, [CAROL]: 100 });
   await w.moniker.claim("one", {}, { wallet: w.wallet(ALICE) });
-  const both = combine(await names.pointName(w.names.state, ALICE, "one", ALICE), await names.list(w.names.state, ALICE, "one", 9n));
+  const both = combine(await names.pointName(w.names.state, ALICE, "one", BOB), await names.list(w.names.state, ALICE, "one", 9n));
   assert.deepEqual(both.actions.map((a) => a.key), ["name/one", "points/one"]);
   assert.equal(both.actions[0].newValue, `${ALICE}@9`);
   assert.ok(w.names.submit(ALICE, both));
@@ -241,4 +248,23 @@ test("combine keeps each key where it first comes, moves a token's index keys an
   assert.deepEqual(bought.payments.map((p) => p.to), [CAROL, ALICE]);
   assert.ok(w.names.submit(BOB, bought));
   assert.deepEqual([await w.moniker.pointer("one"), await w.moniker.pointer("two")], [BOB, BOB]);
+});
+
+test("a write the policy would refuse as too long, or with two claims, is refused here with why", async () => {
+  const w = world({ [ALICE]: 100 });
+  const wallet = w.wallet(ALICE);
+  // A record value up to 16 KiB is written; one byte more is refused before sending.
+  await w.moniker.setField("bio", "b".repeat(16 * 1024), { wallet });
+  await assert.rejects(w.moniker.setField("bio", "b".repeat(16 * 1024 + 1), { wallet }), /too long, at most 16384/);
+  // Bytes, as the policy counts them.
+  await assert.rejects(w.moniker.setField("bio", "é".repeat(8 * 1024 + 1), { wallet }), /too long/);
+  // A handle is as long as its names/<account>/ key allows.
+  await w.moniker.claim("a".repeat(446), {}, { wallet });
+  await assert.rejects(w.moniker.claim("b".repeat(447), {}, { wallet }), /at most 512 bytes/);
+  // Two claims in one write: refused here, and by the policy when written by hand.
+  const claimOf = (handle) => [change(`name/${handle}`, undefined, ALICE), change(names.namesKey(ALICE, handle), undefined, "1"), change(names.pointsKey(handle), undefined, ALICE)];
+  const [two, second] = [claimOf("c1"), claimOf("c2")];
+  assert.throws(() => combine(write(two), write(second)), /at most one name/);
+  assert.ok(!w.names.submit(ALICE, { actions: [...two, ...second] }));
+  assert.ok(w.names.submit(ALICE, { actions: two }));
 });
