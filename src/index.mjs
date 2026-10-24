@@ -18,22 +18,20 @@
 // shows them to the person and signs; this library never holds a key.
 import { connect, monikerClient } from "./client.mjs";
 
-/** Where Moniker lives now: the testnet trial chain and its shared hosts. */
+/** Where Moniker lives: Nexus/moniker and the hosts that serve it. */
 export const DEFAULTS = {
-  chain: ["Nexus", "testnet", "moniker-307b2c"],
+  chain: ["Nexus", "moniker"],
   nodes: ["https://lattice-testnet-apps-iad.fly.dev", "https://lattice-testnet-apps-ams.fly.dev"],
-  app: "https://adalinxx.github.io/moniker/app/",
-  // The trial chain's hosts admit 0-fee transactions: writes are free.
-  fee: 0n,
+  app: "https://app.moniker.bio/",
   // How long a read state is reused before asking for the tip again.
   freshFor: 10_000,
 };
 
 /** The names client for Moniker. */
 export function createMoniker(options) {
-  const { sdk, chain, nodes, app, fee, freshFor } = { ...DEFAULTS, ...options };
+  const { sdk, chain, nodes, app, freshFor } = { ...DEFAULTS, ...options };
   if (!sdk) throw new Error("createMoniker needs { sdk }: the Lattice SDK module");
-  return monikerClient(connect({ sdk, chain, nodes, fee, freshFor }), { app });
+  return monikerClient(connect({ sdk, chain, nodes, freshFor }), { app });
 }
 
 // The builders under the client, over any state view `{ get(key), list(prefix) }`

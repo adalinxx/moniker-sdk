@@ -1,13 +1,13 @@
 // The client createMoniker returns, over a link to Moniker:
-// `{ chain, nodes, fee, state({ fresh }) }`, as `connect` makes it. Reads take
+// `{ chain, nodes, state({ fresh }) }`, as `connect` makes it. Reads take
 // the chain's state at a node's tip; writes go to the person's wallet, which
-// shows them, signs and sends; nothing here holds a key.
+// shows them, sets the fee, signs and sends; nothing here holds a key.
 import * as names from "./records/names.mjs";
 import { anyHost, tip, view, volumeLoader } from "./records/state.mjs";
 import { writeRequest, writeRequestURI } from "./records/wallet.mjs";
 
 /** A link to `chain` through `nodes`, with the Lattice SDK module `sdk`. */
-export function connect({ sdk, chain, nodes, fee, freshFor }) {
+export function connect({ sdk, chain, nodes, freshFor }) {
   const volumes = new sdk.VolumeClient(anyHost(nodes.map((node) => new sdk.HTTPVolumeTransport(`${node}/volumes`, { chainPath: chain }))));
   const load = volumeLoader(volumes, sdk.decodeDagCbor);
 
@@ -32,7 +32,7 @@ export function connect({ sdk, chain, nodes, fee, freshFor }) {
     return read;
   }
 
-  return { chain, nodes, fee, state };
+  return { chain, nodes, state };
 }
 
 const needWallet = (wallet) => {
@@ -42,7 +42,7 @@ const needWallet = (wallet) => {
 /** The connected account. */
 const me = async (wallet) => (await needWallet(wallet).address?.()) ?? (await wallet.connect());
 /** Asks the wallet to send `write` on the link's chain; undefined when there is nothing to write. */
-const send = (link, wallet, w) => (w.actions.length === 0 ? undefined : needWallet(wallet).writeRecords(writeRequest(link.chain, w, link.fee)));
+const send = (link, wallet, w) => (w.actions.length === 0 ? undefined : needWallet(wallet).writeRecords(writeRequest(link.chain, w)));
 /** Builds a write with `build(state, account)` on a fresh state, as the connected account, and sends it. */
 async function buildAndSend(link, wallet, build) {
   const account = await me(wallet);
@@ -124,7 +124,7 @@ export function monikerClient(link, { app }) {
       const entry = await names.resolve(now, name);
       // Wallets show at most 64 characters of a label: a longer one goes unlabeled.
       const label = `Buy @${name}`.length <= 64 ? `Buy @${name}` : undefined;
-      return writeRequestURI(link.chain, names.acquire(name, entry, await now.get(names.pointsKey(name))), { fee: link.fee, label });
+      return writeRequestURI(link.chain, names.acquire(name, entry, await now.get(names.pointsKey(name))), { label });
     },
   };
 }
