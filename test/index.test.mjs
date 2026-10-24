@@ -10,10 +10,10 @@ test("needs the SDK", () => {
   assert.throws(() => createMoniker({}), /needs \{ sdk \}/);
 });
 
-test("Moniker defaults to Nexus/moniker and its hosts, and proposes no fee", () => {
+test("Moniker defaults to Nexus/moniker, its hosts found through Nexus, and proposes no fee", () => {
   const moniker = createMoniker({ sdk });
   assert.deepEqual(moniker.chain, ["Nexus", "moniker"]);
-  assert.deepEqual(moniker.nodes, DEFAULTS.nodes);
+  assert.equal(moniker.nodes, undefined, "no hosts named");
   assert.equal("fee" in DEFAULTS, false);
 });
 

@@ -12,8 +12,9 @@ the names chain every app shares.
   for handles.
 
 Your app keeps its own records, cards included, on its own chain, keyed by
-account. Reads come from Moniker's nodes and are checked by CID; writes go to
-the person's Lattice Wallet, which shows and signs them. No key handling here.
+account. Reads come from the hosts Nexus lists for Moniker and are checked by
+CID; writes go to the person's Lattice Wallet, which shows and signs them. No
+key handling here.
 
 ## Install
 
@@ -36,6 +37,7 @@ is, `src/index.mjs`) and pass it: `createMoniker({ sdk })`.
 
 ```js
 const moniker = createMoniker();                  // Nexus/moniker by default; or { nodes, chain }
+await moniker.hosts();                            // where reads go: the hosts Nexus lists, or your nodes
 
 await moniker.handleOf(address);                  // "alice", or undefined
 await moniker.handlesOf(addresses);               // a feed's handles, in order, from one read
@@ -158,6 +160,15 @@ The fee is the wallet's: a write asks for none, and the person's wallet
 pays the fee they set there for the chain (in Selfhold, under Fee). A fee is
 relay policy, never consensus: each node reports the least it relays as
 `minRelayFee` in `/api/chain/info`, and Selfhold warns when a fee is below it.
+
+Nothing names Moniker's hosts. The client asks Nexus's seeds
+(`DEFAULTS.seeds`, `seed1` to `seed4.lattice.build`) for them with
+`/api/chain/endpoints?chainPath=Nexus/moniker`, takes the first listing's
+https hosts, and reads from the first that answers. It asks again when none
+does, or pass `nodes` to read from hosts you name (your own node, say).
+A listed host only announced itself: every Volume it serves is checked by CID,
+but the tip it reports is taken as it is, so a host could show an older state,
+or a state of its own making, as Moniker's.
 
 ## Layout
 

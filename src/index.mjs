@@ -13,15 +13,19 @@
 //   await moniker.label(address, card);                     // "Alice @alice"
 //   await moniker.showName("@alice", { wallet: window.lattice });
 //
-// Reads go to the first of `nodes` that answers and are checked by CID, so
-// they do not depend on trusting that node. Writes go to the wallet, which
+// Reads go to the first host that answers, found through Nexus (or the
+// `nodes` you name), and every Volume is checked by its CID; the tip is the
+// host's word. Writes go to the wallet, which
 // shows them to the person and signs; this library never holds a key.
 import { connect, monikerClient } from "./client.mjs";
 
-/** Where Moniker lives: Nexus/moniker and the hosts that serve it. */
+export { discover } from "./client.mjs";
+
+/** Where Moniker lives: Nexus/moniker, whose hosts Nexus's seeds list. */
 export const DEFAULTS = {
   chain: ["Nexus", "moniker"],
-  nodes: ["https://lattice-testnet-apps-iad.fly.dev", "https://lattice-testnet-apps-ams.fly.dev"],
+  // Nexus nodes, asked for Moniker's hosts. Name `nodes` to read from those instead.
+  seeds: ["https://seed1.lattice.build", "https://seed2.lattice.build", "https://seed3.lattice.build", "https://seed4.lattice.build"],
   app: "https://app.moniker.bio/",
   // How long a read state is reused before asking for the tip again.
   freshFor: 10_000,
@@ -29,9 +33,9 @@ export const DEFAULTS = {
 
 /** The names client for Moniker. */
 export function createMoniker(options) {
-  const { sdk, chain, nodes, app, freshFor } = { ...DEFAULTS, ...options };
+  const { sdk, chain, nodes, seeds, app, freshFor } = { ...DEFAULTS, ...options };
   if (!sdk) throw new Error("createMoniker needs { sdk }: the Lattice SDK module");
-  return monikerClient(connect({ sdk, chain, nodes, freshFor }), { app });
+  return monikerClient(connect({ sdk, chain, nodes: nodes?.length ? nodes : undefined, seeds, freshFor }), { app });
 }
 
 // The builders under the client, over any state view `{ get(key), list(prefix) }`
