@@ -107,6 +107,8 @@ async function buildAndSend(link, wallet, build) {
   return send(link, wallet, await build(await link.state({ fresh: true }), account));
 }
 const bare = (handle) => String(handle).replace(/^@/, "");
+/** How many photos a client keeps read at once. */
+const PHOTOS_KEPT = 256;
 
 /**
  * The names client over a link to Moniker; `app` is the Moniker app's URL,
@@ -125,21 +127,31 @@ export function monikerClient(link, { app, sdk, sponsor, hash }) {
     const volume = await link.volume(cid);
     return readPhoto(sdk, volume.bytes(cid));
   }
-  // Each photo read once: it is content-addressed, so it never changes.
-  const photos = new Map(); // cid → Promise<object URL | undefined>
+  // Each photo read once: it is content-addressed, so it never changes. The
+  // most recently used PHOTOS_KEPT are kept; older ones are let go.
+  const photos = new Map(); // cid → Promise<object URL | undefined>, oldest first
+  const remember = (cid, url) => {
+    photos.delete(cid);
+    photos.set(cid, url);
+    for (const [old, kept] of photos) {
+      if (photos.size <= PHOTOS_KEPT) break;
+      photos.delete(old);
+      kept.then((u) => u && URL.revokeObjectURL(u));
+    }
+  };
   function photoURL(cid) {
-    if (!photos.has(cid)) {
-      photos.set(
-        cid,
-        photo(cid).then(
-          (file) => file && URL.createObjectURL(new Blob([file.bytes], { type: file.type })),
-          () => {
-            // Not served just now: asked again after a while, not on every draw.
-            setTimeout(() => photos.delete(cid), 60_000);
-            return undefined;
-          },
-        ),
+    if (!profiles.isPhotoCID(cid)) return Promise.resolve(undefined);
+    if (photos.has(cid)) remember(cid, photos.get(cid));
+    else {
+      const read = photo(cid).then(
+        (file) => file && URL.createObjectURL(new Blob([file.bytes], { type: file.type })),
+        () => {
+          // Not served just now: asked again after a while, not on every draw.
+          setTimeout(() => photos.get(cid) === read && photos.delete(cid), 60_000);
+          return undefined;
+        },
       );
+      remember(cid, read);
     }
     return photos.get(cid);
   }
@@ -161,7 +173,7 @@ export function monikerClient(link, { app, sdk, sponsor, hash }) {
     await store(url, volume, { chain: paidOn, hash: grind, progress, signal });
     // Kept: shown from here at once, without reading it back.
     const shown = URL.createObjectURL(new Blob([bytes], { type }));
-    photos.set(volume.cid, Promise.resolve(shown));
+    remember(volume.cid, Promise.resolve(shown));
     return { cid: volume.cid, type, bytes, url: shown };
   }
   return {

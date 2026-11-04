@@ -242,6 +242,8 @@ test("a byline shows the app's name first, else the card's, never as a handle", 
   assert.deepEqual(byline({ address: ALICE, name: "App Name", handle: "alice", profile }), { text: "App Name", handle: "@alice", avatar: PHOTO });
   assert.deepEqual(byline({ address: ALICE, handle: "alice", profile }), { text: "Card Name", handle: "@alice", avatar: PHOTO });
   assert.deepEqual(byline({ address: ALICE, name: "@​", handle: "alice", profile: { name: "@" } }), { text: "@alice" });
-  assert.deepEqual(byline({ address: ALICE, profile: { name: "Card" } }), { text: "Card" });
+  // A card's name with no verified handle carries the account's short ID: anyone may copy a name and photo.
+  assert.deepEqual(byline({ address: ALICE, profile: { name: "Card", avatar: PHOTO } }), { text: "Card", handle: shortAccount(ALICE), avatar: PHOTO });
+  assert.deepEqual(byline({ address: ALICE, name: "App Name", profile: { name: "Card" } }), { text: "App Name" });
   assert.deepEqual(byline({ address: ALICE }), { text: shortAccount(ALICE) });
 });

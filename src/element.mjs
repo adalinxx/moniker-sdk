@@ -32,14 +32,18 @@ const style = `
 
 /**
  * What a byline shows for `address`: `text` (the app's `name`, else the
- * card's, else `@handle`, else the short ID), `handle` (shown beside a name,
- * when verified) and `avatar` (the card's photo CID, if any).
+ * card's, else `@handle`, else the short ID), `handle` (shown beside a name:
+ * the verified `@handle`, or the short ID beside a card's name with no
+ * handle, since anyone may copy a card's name and photo) and `avatar` (the
+ * card's photo CID, if any).
  */
 export function byline({ address, name, handle, profile }) {
-  const shown = displayName(name) ?? displayName(profile?.name);
+  const own = displayName(name);
+  const shown = own ?? displayName(profile?.name);
+  const beside = handle ? `@${handle}` : shown && !own ? shortAccount(address) : undefined;
   return {
     text: shown ?? (handle ? `@${handle}` : shortAccount(address)),
-    ...(shown && handle && { handle: `@${handle}` }),
+    ...(shown && beside && { handle: beside }),
     ...(profile?.avatar && { avatar: profile.avatar }),
   };
 }
