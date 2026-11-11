@@ -16,6 +16,7 @@
 //   const p = await moniker.profile(address);               // { name?, description?, avatar?, url?, links? }
 //   await moniker.photoURL(p.avatar);                       // an object URL for an <img>, checked by CID
 //   await moniker.setPhoto(file, { wallet });               // kept for good with this device's work, then on the card
+//   await moniker.tip("@alice", 5n, { wallet, chain: "Nexus/stoa" }); // 5 of your coins on any chain, to whom @alice points
 //
 // Reads go to the first host that answers, found through Nexus (or the
 // `nodes` you name), and every Volume is checked by its CID; the tip is the

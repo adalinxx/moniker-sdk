@@ -185,6 +185,36 @@ the account's own pattern; restyle it with `--moniker-ink`,
 defineMonikerPhoto(moniker);   // <moniker-photo address="bafyrei…" size="40"></moniker-photo>: the picture alone
 ```
 
+## Tips
+
+```js
+await moniker.tip("@alice", 5n, { wallet });                      // 5 of Moniker's coins
+await moniker.tip("@alice", 5n, { wallet, chain: "Nexus/stoa" });  // or any Lattice chain's
+await moniker.tip(address, 1n, { wallet });                       // or to an account
+await moniker.payee("@alice");                                    // whom a tip to @alice pays
+```
+
+A tip is a payment, with nothing written: the wallet debits the tipper's
+coins on the chain named and credits the account `@alice` points at, while
+that account shows `@alice` (the account `<moniker-name>` shows it on).
+Accounts are the same on every chain, so the payee needs nothing there
+first. It asks for `coinOnly`: a tip comes from coins the tipper holds,
+never earned by a sponsor with work. A chain's policy decides whether a
+plain payment passes; Moniker's lets it through. Tipping yourself, or a
+handle no account shows, is refused here.
+
+```js
+defineMonikerTip(moniker, { wallet: () => window.lattice });
+// <moniker-tip to="@alice"></moniker-tip>
+// <moniker-tip to="bafyrei…" chains="Nexus/moniker Nexus/stoa" amounts="1 5 10 25"></moniker-tip>
+```
+
+`<moniker-tip>` is a Tip button that opens amounts, a choice of whose
+coins when `chains` names several (the first is chosen), and Send. Once
+sent it fires `moniker-tip` with `{ to, amount, chain, transactionCID }`.
+Short of coins, it says what the account holds. The wallet must take a write
+that only pays: Selfhold does from its release after 0.5.2.
+
 ## Showing an account
 
 ```js
@@ -243,7 +273,7 @@ or a state of its own making, as Moniker's.
 - `src/index.mjs`: `createMoniker`, the builders and the checks.
 - `src/browser.mjs`: the same, bound to the vendored Lattice SDK.
 - `src/client.mjs`: the client, over a link to Moniker.
-- `src/element.mjs`: `<moniker-name>` and `<moniker-photo>`.
+- `src/element.mjs`: `<moniker-name>`, `<moniker-photo>` and `<moniker-tip>`.
 - `src/photo.mjs`: photos as Volumes, read and checked, and prepared in a
   canvas.
 - `src/storage.mjs`: the storage sponsor client (from Murmur).

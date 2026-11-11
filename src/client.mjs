@@ -10,6 +10,7 @@ import * as profiles from "./records/profile.mjs";
 import { StorageRefused, storageChain, store } from "./storage.mjs";
 import { anyHost, tip, view, volumeLoader } from "./records/state.mjs";
 import { writeRequest, writeRequestURI } from "./records/wallet.mjs";
+import { isAddress, write } from "./records/shared.mjs";
 
 /**
  * The hosts Nexus lists for `chain`, asked of each of `seeds` (Nexus nodes)
@@ -120,6 +121,36 @@ export function monikerClient(link, { app, sdk, sponsor, hash }) {
   const { state } = link;
   const fresh = () => state({ fresh: true });
   const act = (wallet, build) => buildAndSend(link, wallet, build);
+
+  /** The account a tip to `to` pays: an address as given, or the account `@handle` points at while that account shows it. */
+  async function payee(to) {
+    if (isAddress(to)) return to;
+    const handle = bare(to);
+    const now = await fresh();
+    const account = await names.pointer(now, handle);
+    if (!account || (await names.handleOf(now, account)) !== handle) throw new Error(`No account shows @${handle}`);
+    return account;
+  }
+  /**
+   * Tips `to` (`@handle` or an account) `amount` coins of `chain` (Moniker's
+   * unless named, as an array or "Nexus/…"): a payment from the connected
+   * account's own coins, with nothing written. Any chain whose policy lets a
+   * plain payment through takes it.
+   */
+  async function tip(to, amount, { chain = link.chain, wallet }) {
+    const coins = BigInt(amount);
+    if (coins <= 0n) throw new Error("A tip is at least 1 coin");
+    const chainPath = typeof chain === "string" ? chain.split("/") : chain;
+    const request = async (from) => {
+      const account = await payee(to);
+      if (account === from) throw new Error("You can't tip yourself");
+      return { ...writeRequest(chainPath, write([], [{ to: account, amount: coins }])), coinOnly: true };
+    };
+    // Selfhold's client takes the request as a promise, so its window opens
+    // in the click, before the read; it never asks for the address.
+    if (wallet.isSelfholdWeb) return wallet.writeRecords(request(await wallet.address()));
+    return wallet.writeRecords(await request(await me(wallet)));
+  }
 
   /** The photo kept as `cid`, `{ type, bytes }`, checked; undefined if it isn't one. Throws when no host serves it. */
   async function photo(cid) {
@@ -246,6 +277,10 @@ export function monikerClient(link, { app, sdk, sponsor, hash }) {
     clearProfile: ({ wallet }) => act(wallet, (s, a) => profiles.clearProfile(s, a)),
     /** Takes the photo off your card. The sponsor still keeps the file. */
     clearPhoto: ({ wallet }) => act(wallet, (s, a) => profiles.setProfile(s, a, { avatar: undefined })),
+    /** The account a tip to `@handle` (or an account) pays; throws when no account shows the handle. */
+    payee,
+    /** Tips `@handle` or an account `amount` coins of `{ chain }` (Moniker's by default), from the connected account's coins. */
+    tip: async (to, amount, { chain, wallet } = {}) => tip(to, amount, { chain, wallet: needWallet(wallet) }),
     /** Keeps a photo for good with this device's work, without writing it: `{ cid, type, bytes, url }`. */
     keepPhoto,
     /**

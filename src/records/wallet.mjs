@@ -6,14 +6,14 @@
 // payee, the same body `transaction` below builds.
 
 /**
- * The wallet request for `actions` on `chainPath`, paying `payments`
+ * The wallet request for `actions` (none for a write that only pays) on `chainPath`, paying `payments`
  * (`{ to, amount }`, as names.mjs `buy` returns them) from the connected
  * account. The wallet takes each payee once, so payments to one payee are
  * added together. Without `fee` the wallet uses the person's own; a `fee`
  * given is proposed, and the wallet shows it for approval.
  */
 export function writeRequest(chainPath, { actions, payments = [] }, fee) {
-  if (actions.length === 0) throw new Error("Nothing to write");
+  if (actions.length === 0 && payments.length === 0) throw new Error("Nothing to write");
   const credits = new Map();
   for (const { to, amount } of payments) credits.set(to, (credits.get(to) ?? 0n) + amount);
   return {
