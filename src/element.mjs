@@ -149,3 +149,115 @@ export function defineMonikerPhoto(moniker, tag = "moniker-photo") {
     }),
   );
 }
+
+// <moniker-tip to="@alice"> for any page: a Tip button that pays the account
+// `@alice` points at, while that account shows it, from the reader's own
+// coins, through their wallet. Register it once, with the wallet to ask:
+//
+//   defineMonikerTip(moniker, { wallet: () => window.lattice });
+//   <moniker-tip to="@alice"></moniker-tip>
+//   <moniker-tip to="bafyrei…" chains="Nexus/moniker Nexus/stoa" amounts="1 5 10 25"></moniker-tip>
+//
+// `chains`: whose coins it offers, first chosen (Moniker's by default). Once
+// a tip is sent it fires `moniker-tip` with `{ to, amount, chain, transactionCID }`.
+
+const tipStyle = `
+  :host { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font: inherit; color: var(--moniker-ink, inherit); }
+  button, select { font: inherit; color: inherit; background: none; border: 1px solid var(--moniker-line, #c9c9c9); border-radius: 999px; padding: 2px 12px; cursor: pointer; }
+  button[aria-pressed="true"], button.send { border-color: var(--moniker-accent, #1f3fbf); color: var(--moniker-accent, #1f3fbf); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .note { flex-basis: 100%; margin: 0; font-size: 0.88em; color: var(--moniker-muted, #666); }
+`;
+
+const el = (tag, props = {}, ...children) => {
+  const element = Object.assign(document.createElement(tag), props);
+  element.append(...children);
+  return element;
+};
+
+/** Why a tip wasn't sent: Selfhold's NeedsCoins carries `{ needed, balance }`. */
+const tipError = (error, chain) =>
+  typeof error?.needed === "bigint" && typeof error?.balance === "bigint"
+    ? `Your account holds ${error.balance} coins on ${chain}, and this needs ${error.needed}. Tips are paid from your coins.`
+    : (error?.message ?? String(error));
+
+export function defineMonikerTip(moniker, { wallet, tag = "moniker-tip" } = {}) {
+  if (customElements.get(tag)) return;
+  const walletNow = () => (typeof wallet === "function" ? wallet() : wallet);
+  customElements.define(
+    tag,
+    class extends HTMLElement {
+      static observedAttributes = ["to", "chains", "amounts"];
+      #open = false;
+      #amount = null;
+      #chain = null;
+      #note = "";
+      #busy = false;
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.#draw();
+      }
+      attributeChangedCallback() {
+        if (this.isConnected) this.#draw();
+      }
+      get #chains() {
+        const named = (this.getAttribute("chains") ?? "").split(/\s+/).filter(Boolean);
+        return named.length ? named : [moniker.chain.join("/")];
+      }
+      get #amounts() {
+        const named = (this.getAttribute("amounts") ?? "").split(/\s+/).filter((a) => /^[1-9][0-9]*$/.test(a));
+        return named.length ? named : ["1", "5", "10", "25"];
+      }
+      #draw() {
+        const root = this.shadowRoot;
+        const chains = this.#chains;
+        const amounts = this.#amounts;
+        if (!chains.includes(this.#chain)) this.#chain = chains[0];
+        if (!amounts.includes(this.#amount)) this.#amount = amounts[0];
+        const toggle = el("button", { type: "button", textContent: "Tip", disabled: !this.getAttribute("to") });
+        toggle.setAttribute("aria-expanded", String(this.#open));
+        toggle.onclick = () => ((this.#open = !this.#open), (this.#note = ""), this.#draw());
+        const parts = [Object.assign(document.createElement("style"), { textContent: tipStyle }), toggle];
+        if (this.#open) {
+          for (const amount of amounts) {
+            const pick = el("button", { type: "button", textContent: amount, disabled: this.#busy });
+            pick.setAttribute("aria-pressed", String(amount === this.#amount));
+            pick.setAttribute("aria-label", `${amount} coins`);
+            pick.onclick = () => ((this.#amount = amount), this.#draw());
+            parts.push(pick);
+          }
+          if (chains.length > 1) {
+            const pick = el("select", { disabled: this.#busy }, ...chains.map((c) => el("option", { value: c, textContent: `coins on ${c}`, selected: c === this.#chain })));
+            pick.setAttribute("aria-label", "Whose coins");
+            pick.onchange = () => ((this.#chain = pick.value), this.#draw());
+            parts.push(pick);
+          }
+          const send = el("button", { type: "button", className: "send", disabled: this.#busy, textContent: this.#busy ? "Sending…" : `Send ${this.#amount}` });
+          send.onclick = () => this.#send();
+          parts.push(send, el("p", { className: "note", role: "status", textContent: this.#note || (chains.length > 1 ? "" : `Coins on ${this.#chain}, from your account.`) }));
+        }
+        root.replaceChildren(...parts);
+      }
+      async #send() {
+        const to = this.getAttribute("to");
+        const [amount, chain] = [this.#amount, this.#chain];
+        this.#busy = true;
+        this.#note = "";
+        this.#draw();
+        try {
+          const sent = await moniker.tip(to, amount, { chain, wallet: walletNow() });
+          this.#note = `Sent ${amount} ${amount === "1" ? "coin" : "coins"}. Thank you!`;
+          this.dispatchEvent(new CustomEvent("moniker-tip", { bubbles: true, composed: true, detail: { to, amount: BigInt(amount), chain, transactionCID: sent?.transactionCID } }));
+        } catch (error) {
+          this.#note = tipError(error, chain);
+        } finally {
+          this.#busy = false;
+          this.#draw();
+        }
+      }
+    },
+  );
+}

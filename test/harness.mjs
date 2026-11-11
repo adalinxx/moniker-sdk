@@ -72,7 +72,8 @@ function chain(module, path, balances) {
   /** `owner` signs `{ actions, payments }`; true when it landed. */
   function submit(owner, { actions, payments = [] }, fee = 1n) {
     const body = transaction({ owner, actions, payments, fee, nonce: nonce++, chainPath: path });
-    if (actions.length === 0) return false;
+    // A transaction changes something: a record, or coins (a plain payment).
+    if (actions.length === 0 && payments.length === 0) return false;
     if (new Set(actions.map((a) => a.key)).size !== actions.length) return false;
     for (const { key, oldValue } of actions) if (map.get(key) !== oldValue) return false;
     if (body.accountActions.some(({ delta }) => delta === 0n)) return false;

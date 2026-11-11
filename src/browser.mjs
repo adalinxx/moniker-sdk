@@ -5,6 +5,7 @@
 //   defineMonikerName(moniker);               // then <moniker-name address="…">
 //   defineHandlePicker(moniker);              // then <moniker-handle-picker>, and picker.open() from a click
 //   defineMonikerPhoto(moniker);              // then <moniker-photo address="…" size="40">
+//   defineMonikerTip(moniker, { wallet });    // then <moniker-tip to="@alice" chains="Nexus/moniker Nexus">
 //
 // Photos are kept with this device's work, on its graphics chip where the
 // page can use one, else its processor (vendor/work/).
@@ -13,7 +14,7 @@ import { hasher } from "../vendor/work/hash.mjs";
 import { createMoniker as monikerOver } from "./index.mjs";
 
 export * from "./index.mjs";
-export { defineMonikerName, defineMonikerPhoto } from "./element.mjs";
+export { defineMonikerName, defineMonikerPhoto, defineMonikerTip } from "./element.mjs";
 export { defineHandlePicker } from "./picker.mjs";
 export { workDevice } from "../vendor/work/hash.mjs";
 export const createMoniker = (options = {}) => monikerOver({ sdk, hash: hasher, ...options });
